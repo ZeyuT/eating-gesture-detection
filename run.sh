@@ -1,0 +1,29 @@
+#/bin/bash
+#PBS -N zeyut
+#PBS -l select=1:ncpus=16:mem=100gb:ngpus=1:gpu_model=v100:interconnect=any
+#PBS -l walltime=72:00:00
+#PBS -e /home/zeyut/eat_detection/job_output
+#PBS -o /home/zeyut/eat_detection/job_output
+#PBS -j oe
+#PBS -J 1-2
+
+
+module load cuda/10.2.89-gcc/8.3.1 
+module load cudnn/8.0.0.180-10.2-linux-x64-gcc/8.3.1 
+module load anaconda3/2019.10-gcc/8.3.1
+
+source activate tf-2.2
+
+cd /scratch1/zeyut/eat_detection
+
+cp /home/zeyut/eat_detection/codes/train_model.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/codes/models.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/codes/utils.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/codes/constants.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/codes/inputs.txt /scratch1/zeyut/eat_detection
+
+inputs=( $(sed -n ${PBS_ARRAY_INDEX}p inputs.txt) )
+
+python ./train_model.py ${inputs[0]} ${inputs[1]} ${inputs[2]} ${inputs[3]} ${inputs[4]} ${inputs[5]}
+
+
