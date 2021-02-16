@@ -12,4 +12,4 @@ sklearn==0.0
 
 <i> Note: some dependencies may not be used for now, but are reserved for possible future purpose </i>
 
-Dependencies installing pipeline: [requirements_2.2.txt](https://github.com/ZeyuT/eating-gesture-detection/blob/main/requirements_2.2.txt)
+Dependencies installing pipeline: [env-2.2.sh](https://github.com/ZeyuT/eating-gesture-detection/blob/main/env-2.2.sh)
