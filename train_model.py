@@ -12,9 +12,51 @@ import tensorflow.keras.backend as K
 
 from models import CNN3D_Model, CNNLSTM_Model
 from utils import get_list, test_model, DataGenerator, testG
-from constants import FRAME_LOC,WIDTH,HEIGHT,LABEL_TABLE
+from constants import FRAME_LOC,WIDTH,HEIGHT,LABEL_TABLE,LABEL_COUNTS
             
-
+def class_weights(label_counts):
+    ret = []
+    total = float(sum(label_counts))
+    for count in label_counts:
+        ret.append(total/(count * len(label_counts)))
+    return np.array(ret)
+        
+def weighted_sparse_categorical_crossentropy(weights):
+    """
+    A weighted version of keras.objectives.sparse_categorical_crossentropy
+    
+    Variables:
+        weights: numpy array of shape (C,) where C is the number of classes
+    
+    Usage:
+        weights = np.array([0.5,2,10]) # Class one at 0.5, class 2 twice the normal weights, class 3 10x.
+        loss = weighted_sparse_categorical_crossentropy(weights)
+        model.compile(loss=loss,optimizer='adam')
+    """
+    num_class = len(weights)
+    weights = K.variable(weights)
+        
+    def loss(y_true, y_pred):
+        # scale predictions so that the class probas of each sample sum to 1
+        y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
+        # one-hot encode labels
+        # to_categorical does not work here. It takes array/list as arguement, but I cannot find a easy way to convert 
+        # tensor y_true to array
+        # y_true_encoded = to_categorical(y_true, num_classes=weights.shape[0])
+        # so hand write one-hot encoding
+        temp = []
+        for i in range(num_class):
+            temp.append(tf.where(tf.equal(y_true, i), 1.0, 0.0))
+        y_true_encoded = tf.concat(temp, axis=-1)
+        # clip to prevent NaN's and Inf's
+        y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
+        # calc
+        loss = y_true_encoded * K.log(y_pred) * weights
+        loss = -K.mean(loss, -1)
+        return loss
+    
+    return loss
+    
 if __name__ == "__main__":  
     
     print('start')
@@ -118,6 +160,8 @@ if __name__ == "__main__":
         print("{} patterns/samples in training set".format(len(train_sample_list)))
     
         print('Train {} model'.format(network))  
+        weights = class_weights(LABEL_COUNTS)
+        print('class weights: {}'.format(weights)) 
         start_time = time.time()
         sys.stdout.flush()         
                 
@@ -127,7 +171,8 @@ if __name__ == "__main__":
         early_stopping  = callbacks.EarlyStopping(monitor='train_accuray', min_delta=0.0001, patience=10, 
                                                     verbose=2, mode='auto', baseline=None,                                                                                                         restore_best_weights=True)
         '''
-    
+        # loss function depends on the actual NN
+        loss = weighted_sparse_categorical_crossentropy(weights)
         hist = model.fit(train_gen,
                           epochs= epochs, 
                           verbose = 2,
@@ -136,6 +181,7 @@ if __name__ == "__main__":
                           workers=16,
                           shuffle = False) # Already shuffled in generator at the end of each epoch      
         del train_gen
+        model.save_weights('{}/model.h5'.format(model_loc))        
         elapsed_time = time.time() - start_time
         print('Finished Training Model, elapsed time: {0:.6f} s'.format(elapsed_time)) 
     
