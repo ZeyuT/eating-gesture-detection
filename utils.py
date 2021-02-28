@@ -5,8 +5,8 @@ import cv2
 import math
 from collections import defaultdict
 from tensorflow import keras
-
-from constants import FRAME_LOC,WIDTH,HEIGHT,LABEL_TABLE
+from sklearn.utils import shuffle
+from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_TABLE,LABEL_NUM
 
 def numeralize_labels(label):
     if label == "bite":
@@ -14,16 +14,19 @@ def numeralize_labels(label):
     elif label == "drink":
         return 1
     elif label == "rest":
-        return 1
-    elif label == "utensiling":
         return 2
-    elif label == "other":
+    elif label == "utensiling":
         return 3
-    elif label == "unknown":
+    elif label == "other":
         return 4
+    elif label == "unknown":
+        return 5
+        
 def get_list(video_list, seq_len, stride, model_type):
     sample_list = []
     label_list = []
+    label_counts = [0 for i in range(LABEL_NUM)]
+
     for video in video_list:
         frame_locs = []
         frame_labels = []
@@ -31,15 +34,19 @@ def get_list(video_list, seq_len, stride, model_type):
         gt_frame = [str.split(line, "\t") for line in f.readlines()]
         for frame_info in gt_frame:
             frame_locs.append(FRAME_LOC + video + "/" + frame_info[0])
-            cur_labelIdx = LABEL_TABLE[str.split(frame_info[1], "\n")[0]]
-            frame_labels.append(numeralize_labels(str.split(frame_info[1], "\n")[0]))
+            #cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])
+            cur_labelIdx = int(frame_info[1])
+            frame_labels.append(cur_labelIdx)
+            label_counts[cur_labelIdx] += 1
+
         for i in range(0, len(frame_locs)-seq_len, stride):
             sample_list.append(frame_locs[i:i+seq_len])
             if model_type == 1:
                 label_list.append(frame_labels[i:i+seq_len])
-            elif model_type == 2:
-                label_list.append(frame_labels[i+seq_len-1])
-    return np.array(sample_list), np.array(label_list)
+            elif model_type == 2 or model_type == 3:
+                #label_list.append(frame_labels[i+seq_len-1])
+                label_list.append(frame_labels[i])
+    return np.array(sample_list), np.array(label_list), label_counts
     
 class testG():
     def __init__(self, sample_list, label_list, seq_len, model_type, batch_size=32, shuffle=True):
@@ -53,7 +60,7 @@ class testG():
         self.on_epoch_end()
 
     def len(self):
-        'Denotes the number of batches per epoch'
+        'Number of batch in the Sequence'
         return math.ceil(len(self.sample_list) / self.batch_size)
 
     def getitem(self, idx):
@@ -66,28 +73,32 @@ class testG():
                                       (idx + 1) * self.batch_size]
         for frame_list in batch_sample_list:
             cur_x = []
-
             for frame_loc in frame_list:
-                cur_x.append(cv2.imread(frame_loc, cv2.IMREAD_UNCHANGED)/255.0)
+                cur_img = cv2.imread(frame_loc, cv2.IMREAD_GRAYSCALE)/255.0
+                cur_x.append(cur_img)
             batch_x.append(cur_x) 
-            
+        batch_x = np.reshape(batch_x,(-1,self.seq_len,HEIGHT,WIDTH,CHANNEL))
+        
         if self.model_type == 1:
             for label_list in batch_label_list:
                 cur_y = []
                 for label in label_list:
                     cur_y.append(label)
                 batch_y.append(cur_y)  
-                
-        elif self.model_type == 2:
+            batch_y = np.reshape(batch_y, (-1,self.seq_len,1))
+            
+        elif self.model_type == 2 or self.model_type == 3:
             for label in batch_label_list:
-                batch_y.append(label)                               
-                          
-        return np.array(batch_x), np.array(batch_y)
+                batch_y.append(label)         
+            batch_y = np.reshape(batch_y, (-1,1))                     
+                        
+        return batch_x, batch_y
         
     def on_epoch_end(self):
         if self.shuffle == True:
             np.random.shuffle(self.sample_list)
-                         
+            
+            
 class DataGenerator(keras.utils.Sequence):
     def __init__(self, sample_list, label_list, seq_len, model_type, batch_size=32, shuffle=True):
         'Initialization'
@@ -113,27 +124,31 @@ class DataGenerator(keras.utils.Sequence):
                                       (idx + 1) * self.batch_size]
         for frame_list in batch_sample_list:
             cur_x = []
-
             for frame_loc in frame_list:
-                cur_x.append(cv2.imread(frame_loc, cv2.IMREAD_UNCHANGED)/255.0)
+                cur_img = cv2.imread(frame_loc, cv2.IMREAD_GRAYSCALE)/255.0 - 0.5
+                cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
+                cur_x.append(cur_img)
             batch_x.append(cur_x) 
-            
+        batch_x = np.reshape(batch_x,(-1,self.seq_len,HEIGHT,WIDTH,CHANNEL))
+        
         if self.model_type == 1:
             for label_list in batch_label_list:
                 cur_y = []
                 for label in label_list:
                     cur_y.append(label)
                 batch_y.append(cur_y)  
-                
-        elif self.model_type == 2:
+            batch_y = np.reshape(batch_y, (-1,self.seq_len,1))
+            
+        elif self.model_type == 2 or self.model_type == 3:
             for label in batch_label_list:
-                batch_y.append(label)                               
-                          
-        return np.array(batch_x), np.array(batch_y)
+                batch_y.append(label)         
+            batch_y = np.reshape(batch_y, (-1,1))                     
+                        
+        return batch_x, batch_y
         
     def on_epoch_end(self):
         if self.shuffle == True:
-            np.random.shuffle(self.sample_list)
+            self.sample_list, self.label_list = shuffle(self.sample_list,self.label_list)
     
 def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
     test_batch = 1024
@@ -147,29 +162,31 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
         frames = []
         frame_labels = []
 
-
         f = open(FRAME_LOC + video + "/gt_frame.txt","r")
       
         gt_frame = [str.split(line, "\t") for line in f.readlines()]
         for frame_info in gt_frame:
-            frames.append(cv2.imread(FRAME_LOC + video + "/" + frame_info[0], cv2.IMREAD_UNCHANGED)/255.0)
-            frame_labels.append(numeralize_labels(str.split(frame_info[1], "\n")[0]))
+            cur_img = cv2.imread(FRAME_LOC + video + "/" + frame_info[0], cv2.IMREAD_GRAYSCALE)/255.0 - 0.5
+            cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
+            frames.append(cur_img)
+            cur_labelIdx = int(frame_info[1])
+            #cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])
+            frame_labels.append(cur_labelIdx)
         frame_labels = np.array(frame_labels)
-        
         pred = []
         x_test = []
         if model_type == 1:
-            for i in range(0, len(frames)-seq_len, stride):
+            for i in range(0, len(frames)-seq_len):
                 x_test.append(frames[i:i+seq_len])
                 'Make predictions with batch size being test_batch'
                 if len(x_test) >= test_batch:
-                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,3))
+                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
                     cur_pred = np.squeeze(model.predict(x_test))
                     pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
                     sample_num += len(x_test)
                     x_test = []
             if len(x_test) > 0:
-                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,3))
+                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
                     cur_pred = np.squeeze(model.predict(x_test))
                     pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
                     sample_num += len(x_test)
@@ -182,32 +199,39 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
                     pred_heat[stride*i+j,pred[i,j]] += 1
             'get frame wise predictions with max vote strategy'
             frame_pred = np.argmax(pred_heat, axis=-1)
-        
-        elif model_type == 2:
+         
+        elif model_type == 2 or model_type == 3:
+            pred = []
             for i in range(0, len(frames)-seq_len):
                 x_test.append(frames[i:i+seq_len])
                 'Make predictions with batch size being test_batch'
                 if len(x_test) >= test_batch:
-                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,3))
+                    #print(np.array(x_test).shape)
+                    for m in range(test_batch):
+                        for n in range(seq_len):
+                            cv2.imwrite("./test/{}_{}.jpg".format(m,n),x_test[m][n]*255)
+                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
                     cur_pred = np.squeeze(model.predict(x_test))
                     pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
+                    #print(frame_labels[0:test_batch])
+                    #print(model.predict(x_test))
+                    #print(np.argmax(cur_pred, axis=-1).astype("int"))
                     sample_num += len(x_test)
                     x_test = []
+                    #break
             if len(x_test) > 0:
-                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,3))
+                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
                     cur_pred = np.squeeze(model.predict(x_test))
                     pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
                     sample_num += len(x_test)
             pred = np.concatenate(pred, axis=0)
             frame_pred = np.zeros(len(frames))
-            frame_pred[seq_len:] = pred
-
-            
-        f_results = open(test_loc + "/pred_{}.txt".format(video),'w')
-        f_results.write("\n".join([str(i) for i in frame_pred]))
-        f_results.close()
+            frame_pred[0:-(seq_len)] = pred
         
-        cur_TP = np.sum(frame_pred == frame_labels)
+        f_results = open(test_loc + "/pred_{}.txt".format(video),'w')
+        f_results.write("\n".join(["frame{:05d}.ppm\t{}\t{}".format(i,j,k) for i,(j,k) in enumerate(zip(frame_labels,frame_pred))]))
+        f_results.close()   
+        cur_TP = np.sum((frame_pred == frame_labels))
 
         total_TP += cur_TP
         total_pred += len(frame_pred)

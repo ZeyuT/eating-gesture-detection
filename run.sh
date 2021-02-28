@@ -16,11 +16,11 @@ source activate tf-2.2
 
 cd /scratch1/zeyut/eat_detection
 
-cp /home/zeyut/eat_detection/codes/train_model.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/codes/models.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/codes/utils.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/codes/constants.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/codes/inputs.txt /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/train_model.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/models.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/utils.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/constants.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/inputs.txt /scratch1/zeyut/eat_detection
 
 inputs=( $(sed -n ${PBS_ARRAY_INDEX}p inputs.txt) )
 
