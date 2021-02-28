@@ -190,19 +190,19 @@ for (j=0; j<FRAMES; j++)
       state_ok=1;		/* assume ok, now check for problems */
       if (state == 0  &&  y < 15.0+RADIUS)
         state_ok=0;		/* try another direction */
-      if (state == 1  &&  x > (double)COLS-(15.0+RADIUS))
+      if (state == 1  &&  x > (double)COLS-(8.0+RADIUS))
         state_ok=0;		/* try another direction */
-      if (state == 2  &&  y > (double)ROWS-(15.0+RADIUS))
+      if (state == 2  &&  y > (double)ROWS-(8.0+RADIUS))
         state_ok=0;		/* try another direction */
       if (state == 3  &&  x < 15.0+RADIUS)
         state_ok=0;		/* try another direction */
       }
 	/* find random amount of time to move this direction */
-    delta_t=normal_rand()*3.5+14.0;
-    if (delta_t < 7.0)
-      delta_t=7.0;	/* min time to stay this direction */
-    if (delta_t > 21.0)
-      delta_t=21.0;	/* max time to stay this direction */
+    delta_t=normal_rand()*2.5+5.0;
+    if (delta_t < 3.0)
+      delta_t=3.0;	/* min time to stay this direction */
+    if (delta_t > 10.0)
+      delta_t=10.0;	/* max time to stay this direction */
     moving_count=0;	/* cumulative time spent moving this direction */
 	/* find new vector of motion */
     if (state == 0)

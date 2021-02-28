@@ -28,8 +28,8 @@ def extract_raw_frames(curVideoPath,frame_save_loc, fps):
         response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
         frameNo += 1
         
-def process_frames(window_loc, frame_save_loc, gt_loc, video_sync_offset, fps):        
-    gesture_start, gesture_end, gesture_types = load_gt(gt_loc, video_sync_offset)
+def process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset, fps):        
+    gesture_start, gesture_end, gesture_types = load_gt(gesture_gt_loc, video_sync_offset)
     
     frame_names = [f for f in os.listdir(frame_save_loc) if f.endswith('.ppm')]
     frame_names.sort(reverse=False)
@@ -76,11 +76,11 @@ def process_frames(window_loc, frame_save_loc, gt_loc, video_sync_offset, fps):
     print("--------------------------------------------", flush=True)
     f_gt_frame.close()
 
-def load_gt(gt_loc, video_sync_offset):
+def load_gt(gesture_gt_loc, video_sync_offset):
     def timeidx_to_ms(timeidx):
         return (int)(timeidx * 1000.0 / 15.0 + video_sync_offset);	# 1000/15 converts 15Hz data to milliseconds 
         
-    f_gt = open(gt_loc ,'r')
+    f_gt = open(gesture_gt_loc,'r')
     is_start = 1  # a flag used to jump to the first labeled gesture in videos
     gesture_start = []
     gesture_end = []
@@ -116,7 +116,7 @@ if __name__ == "__main__":
         pass
 
     f_filelist = open(raw_data_loc + "DATA_FILENAMES.txt","r")
-
+    f_hand_log = open("left_hand.txt","w")
     video_num = 0
     for file_loc in f_filelist.readlines():
     #file_loc = "p005/c2/20120201115556861.txt"    
@@ -133,17 +133,37 @@ if __name__ == "__main__":
         video_loc = raw_data_loc + relative_path + "/" + video_name
         
         # check the integrity of files for the current video sample
-        gt_loc = raw_data_loc + relative_path + '/gesture_union.txt'
-        if not os.path.exists(gt_loc):
+        gesture_gt_loc = raw_data_loc + relative_path + '/gesture_union.txt'
+        if not os.path.exists(gesture_gt_loc):
             continue
+            
+        # check the dominant hand. Ignore people using left hands.
+        gt_loc = raw_data_loc + relative_path + '/gt_union.txt'
+        if not os.path.exists(gt_loc):
+            print("no such path: {}".format(gt_loc))
+            continue
+        f_hand = open(gt_loc, "r")
+        left_hand_count = 0
+        total_count = 0
+        for line in f_hand.readlines():
+            cur_hand = str.split(line, "\t")[2]
+            if cur_hand == "left":
+                left_hand_count += 1
+            total_count += 1
+        if left_hand_count > 0.5 * total_count:
+            print("left hand is dominant: {}".format(gt_loc))
+            f_hand_log.write(str.split(file_loc,"/")[0] + "/" + str.split(file_loc,"/")[1] + "\n")
+            continue
+        f_hand.close()
+        
         f_windows = open(raw_data_loc + "window_loc.txt","r")
         window_loc = []
         for line in f_windows.readlines():
             if str.split(line,"\t")[0] == relative_path:
                 window_loc = list(map(int,str.split(str.split(line,"\t")[1]," ")[0:4]))
         if len(window_loc) == 0:
-            print("WARNING: cannot find the window loc for {}".format(relative_path))
-            print("{} videos have been processed".format(video_num))
+            #print("WARNING: cannot find the window loc for {}".format(relative_path))
+            #print("{} videos have been processed".format(video_num))
             continue;
         
         frame_save_loc = save_loc + "_".join(str.split(file_loc,"/")[0:-1]) + "/"
@@ -151,13 +171,13 @@ if __name__ == "__main__":
             os.makedirs(frame_save_loc)
         
         # load video file
-        extract_raw_frames(video_loc,frame_save_loc, fps)        
-        process_frames(window_loc, frame_save_loc, gt_loc, video_sync_offset, fps)
+        #extract_raw_frames(video_loc,frame_save_loc, fps)        
+        #process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset, fps)
            
         video_num += 1
         if video_num >= 50:
    			   break
-		    
+    f_hand_log.close()
     f_filelist.close()
     f_windows.close()
     
