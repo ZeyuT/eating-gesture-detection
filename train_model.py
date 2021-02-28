@@ -77,6 +77,7 @@ if __name__ == "__main__":
           = 1: train and test model on raw video data
           = 2: debug mode on simulated data
           = 3: train and test model on raw simulated data
+          = 4: test model on raw simulated data
     '''
     train = int(sys.argv[1])
     if train == 2:
@@ -158,7 +159,7 @@ if __name__ == "__main__":
                   )  
     model.summary()
     
-    if train>0 and train < 4:
+    if train > 0 and train < 4:
         if train == 2:
             # for debugging
             print(train_sample_list.shape)
