@@ -39,22 +39,9 @@ def weighted_sparse_categorical_crossentropy(weights):
     def loss(y_true, y_pred):
         # scale predictions so that the class probas of each sample sum to 1
         y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
-        # one-hot encode labels
-        # to_categorical does not work here. It takes array/list as arguement, but I cannot find a easy way to convert 
-        # tensor y_true to array
-        # y_true_encoded = to_categorical(y_true, num_classes=weights.shape[0])
-        # so hand write one-hot encoding
-        '''
-        temp = []
-        for i in range(num_class):
-            temp.append(tf.where(tf.equal(y_true, i), 1.0, 0.0))
-        y_true_encoded = tf.concat(temp, axis=-1)
-        '''
         y_true_encoded = tf.one_hot(tf.cast(y_true,tf.int32), LABEL_NUM)
         # clip to prevent NaN"s and Inf"s
         y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
-        tf.print(y_pred)
-        tf.print(y_true_encoded)
         # calc
         loss = y_true_encoded * K.log(y_pred) * weights
         loss = -K.mean(loss, -1)
