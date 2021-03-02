@@ -42,7 +42,7 @@ def weighted_sparse_categorical_crossentropy(weights):
         y_true_encoded = tf.one_hot(tf.cast(y_true,tf.int32), LABEL_NUM)
         # clip to prevent NaN"s and Inf"s
         y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
-        # calc
+        # calculation
         loss = y_true_encoded * K.log(y_pred) * weights
         loss = -K.mean(loss, -1)
         return loss
@@ -76,9 +76,9 @@ if __name__ == "__main__":
         #for debugging
         seq_len = 2
         stride = 1
-        batch_size = 8
+        batch_size = 4
         epochs = 1
-        network = "CNN3D_Model"
+        network = "CNNLSTM_Model"
     else:
         batch_size = int(sys.argv[2])
         epochs = int(sys.argv[3])
@@ -87,7 +87,7 @@ if __name__ == "__main__":
         stride = int(sys.argv[6])
     
     if network == "CNNLSTM_Model":
-        model_type = 3
+        model_type = 1
     elif network == "CNN3D_Model":
         model_type = 2
         
@@ -147,7 +147,7 @@ if __name__ == "__main__":
                   loss = loss,
                   #loss= tf.keras.losses.SparseCategoricalCrossentropy(),
                   optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.01),
-                  metrics = [tf.keras.metrics.CategoricalAccuracy()]
+                  metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]
                   )  
     model.summary()
     
@@ -162,12 +162,12 @@ if __name__ == "__main__":
                 x, y = train_gen.getitem(idx)
                 for i,seq in enumerate(x):
                     for j,img in enumerate(seq):
-                        img = np.squeeze(img)
+                        #img = np.squeeze(img)
                         #cv2.imwrite("./test/{}_{}.jpg".format(i,j),img*255)
                         print(img.shape)
                         count += 1
-                print(x.shape, y.shape)
-                print(y)
+                #print(x.shape, y.shape)
+                #print(y)
                 exit(0)
         else:
             train_gen = DataGenerator(train_sample_list, train_label_list, seq_len, model_type, batch_size=batch_size)

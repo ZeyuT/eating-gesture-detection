@@ -57,6 +57,7 @@ def CNNLSTM_Model(input_tensor,n_filters=8):
     x = TimeDistributed_Conv2D_Block(input_tensor,n_filters)
     x = TimeDistributed_Conv2D_Block(x,n_filters)
     x = TimeDistributed_Conv2D_Block(x,n_filters*2)
+    x = TimeDistributed_Conv2D_Block(x,n_filters*2)
     x = TimeDistributed_Conv2D_Block(x,n_filters*4)   
 
     x = TimeDistributed(Flatten())(x)
@@ -75,10 +76,10 @@ def CNNLSTM_Model(input_tensor,n_filters=8):
     '''
     x = LSTM(units = 32, 
             kernel_initializer='he_normal', bias_initializer='zeros',
-            return_sequences=False)(x)
+            return_sequences=True)(x)
            
-    #x = TimeDistributed(Dense(LABEL_NUM))(x)
-    x = Dense(LABEL_NUM)(x)
+    x = TimeDistributed(Dense(LABEL_NUM))(x)
+    #x = Dense(LABEL_NUM)(x)
     outputs = Activation("softmax")(x)
     model = Model(inputs=[input_tensor], outputs=[outputs], name="CNN-LSTM")
     return model

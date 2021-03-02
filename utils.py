@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 import math
 from collections import defaultdict
+import tensorflow as tf
 from tensorflow import keras
 from sklearn.utils import shuffle
 from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_TABLE,LABEL_NUM
@@ -75,6 +76,7 @@ class testG():
             cur_x = []
             for frame_loc in frame_list:
                 cur_img = cv2.imread(frame_loc, cv2.IMREAD_GRAYSCALE)/255.0
+                cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
                 cur_x.append(cur_img)
             batch_x.append(cur_x) 
         batch_x = np.reshape(batch_x,(-1,self.seq_len,HEIGHT,WIDTH,CHANNEL))
@@ -85,18 +87,18 @@ class testG():
                 for label in label_list:
                     cur_y.append(label)
                 batch_y.append(cur_y)  
-            batch_y = np.reshape(batch_y, (-1,self.seq_len,1))
+            batch_y = np.reshape(batch_y, (-1,self.seq_len))
             
         elif self.model_type == 2 or self.model_type == 3:
             for label in batch_label_list:
                 batch_y.append(label)         
-            batch_y = np.reshape(batch_y, (-1,1))                     
-                        
+            batch_y = np.array(batch_y)                   
+        
         return batch_x, batch_y
         
     def on_epoch_end(self):
         if self.shuffle == True:
-            np.random.shuffle(self.sample_list)
+            self.sample_list, self.label_list = shuffle(self.sample_list,self.label_list)
             
             
 class DataGenerator(keras.utils.Sequence):
@@ -125,7 +127,7 @@ class DataGenerator(keras.utils.Sequence):
         for frame_list in batch_sample_list:
             cur_x = []
             for frame_loc in frame_list:
-                cur_img = cv2.imread(frame_loc, cv2.IMREAD_GRAYSCALE)/255.0 - 0.5
+                cur_img = cv2.imread(frame_loc, cv2.IMREAD_GRAYSCALE)/255.0
                 cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
                 cur_x.append(cur_img)
             batch_x.append(cur_x) 
@@ -137,13 +139,13 @@ class DataGenerator(keras.utils.Sequence):
                 for label in label_list:
                     cur_y.append(label)
                 batch_y.append(cur_y)  
-            batch_y = np.reshape(batch_y, (-1,self.seq_len,1))
+            batch_y = np.reshape(batch_y, (-1,self.seq_len))
             
         elif self.model_type == 2 or self.model_type == 3:
             for label in batch_label_list:
                 batch_y.append(label)         
-            batch_y = np.reshape(batch_y, (-1,1))                     
-                        
+            batch_y = np.array(batch_y)       
+              
         return batch_x, batch_y
         
     def on_epoch_end(self):
@@ -166,7 +168,7 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
       
         gt_frame = [str.split(line, "\t") for line in f.readlines()]
         for frame_info in gt_frame:
-            cur_img = cv2.imread(FRAME_LOC + video + "/" + frame_info[0], cv2.IMREAD_GRAYSCALE)/255.0 - 0.5
+            cur_img = cv2.imread(FRAME_LOC + video + "/" + frame_info[0], cv2.IMREAD_GRAYSCALE)/255.0 
             cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
             frames.append(cur_img)
             cur_labelIdx = int(frame_info[1])
@@ -207,9 +209,9 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
                 'Make predictions with batch size being test_batch'
                 if len(x_test) >= test_batch:
                     #print(np.array(x_test).shape)
-                    for m in range(test_batch):
-                        for n in range(seq_len):
-                            cv2.imwrite("./test/{}_{}.jpg".format(m,n),x_test[m][n]*255)
+                    #for m in range(test_batch):
+                        #for n in range(seq_len):
+                            #cv2.imwrite("./test/{}_{}.jpg".format(m,n),x_test[m][n]*255)
                     x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
                     cur_pred = np.squeeze(model.predict(x_test))
                     pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
