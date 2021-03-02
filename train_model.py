@@ -12,7 +12,7 @@ import tensorflow.keras.backend as K
 
 from models import CNN3D_Model, CNNLSTM_Model
 from utils import get_list, test_model, DataGenerator, testG
-from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_TABLE
+from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_TABLE,LABEL_NUM
             
 def class_weights(label_counts):
     ret = []
@@ -44,12 +44,17 @@ def weighted_sparse_categorical_crossentropy(weights):
         # tensor y_true to array
         # y_true_encoded = to_categorical(y_true, num_classes=weights.shape[0])
         # so hand write one-hot encoding
+        '''
         temp = []
         for i in range(num_class):
             temp.append(tf.where(tf.equal(y_true, i), 1.0, 0.0))
         y_true_encoded = tf.concat(temp, axis=-1)
+        '''
+        y_true_encoded = tf.one_hot(tf.cast(y_true,tf.int32), LABEL_NUM)
         # clip to prevent NaN"s and Inf"s
         y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
+        tf.print(y_pred)
+        tf.print(y_true_encoded)
         # calc
         loss = y_true_encoded * K.log(y_pred) * weights
         loss = -K.mean(loss, -1)
@@ -153,8 +158,8 @@ if __name__ == "__main__":
         model = CNN3D_Model(input_ori)
     model.compile(
                   loss = loss,
-                  loss= tf.keras.losses.SparseCategoricalCrossentropy(),
-                  optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001),
+                  #loss= tf.keras.losses.SparseCategoricalCrossentropy(),
+                  optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.01),
                   metrics = [tf.keras.metrics.CategoricalAccuracy()]
                   )  
     model.summary()
@@ -196,6 +201,7 @@ if __name__ == "__main__":
 
         hist = model.fit(train_gen,
                           epochs= epochs, 
+                          steps_per_epoch = 1,
                           verbose = 2,
                           callbacks = [csv_logger],
                           #use_multiprocessing=True,
