@@ -33,20 +33,32 @@ def weighted_sparse_categorical_crossentropy(weights):
         loss = weighted_sparse_categorical_crossentropy(weights)
         model.compile(loss=loss,optimizer="adam")
     """
+    '''
     num_class = len(weights)
-    weights = K.constant(weights)
-        
+
+
     def loss(y_true, y_pred):
         # scale predictions so that the class probas of each sample sum to 1
-        y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
-        y_true_encoded = tf.one_hot(tf.cast(y_true,tf.int32), LABEL_NUM)
+        #y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
+        y_true_encoded = tf.one_hot(tf.cast(y_true,tf.int32), num_class)
         # clip to prevent NaN"s and Inf"s
         y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
         # calculation
         loss = y_true_encoded * K.log(y_pred) * weights
-        loss = -K.mean(loss, -1)
+        loss = -K.sum(loss, -1)
         return loss
-    
+    '''   
+    '''
+    A simpler version using Keras sparse_categorical_crossentropy
+    https://github.com/tensorflow/models/blob/master/official/nlp/modeling/losses/weighted_sparse_categorical_crossentropy.py
+    '''    
+    weights = tf.cast(weights, tf.float32)
+    scce = tf.keras.losses.SparseCategoricalCrossentropy()
+    def loss(y_true, y_pred):
+        example_losses = scce(y_true, y_pred)
+        return tf.math.divide_no_nan(
+                tf.reduce_sum(example_losses * weights), tf.reduce_sum(weights))
+            
     return loss
     
 if __name__ == "__main__":  
@@ -87,7 +99,7 @@ if __name__ == "__main__":
         stride = int(sys.argv[6])
     
     if network == "CNNLSTM_Model":
-        model_type = 1
+        model_type = 3
     elif network == "CNN3D_Model":
         model_type = 2
         
@@ -120,7 +132,7 @@ if __name__ == "__main__":
     sys.stdout.flush()
     
     if train >= 2: 
-        train_video_list = ["train6"]
+        train_video_list = ["train"]
         test_video_list = ["test"]
     else:
         video_list = [f for f in os.listdir(FRAME_LOC) if f.startswith("p")]
@@ -146,7 +158,7 @@ if __name__ == "__main__":
     model.compile(
                   loss = loss,
                   #loss= tf.keras.losses.SparseCategoricalCrossentropy(),
-                  optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.01),
+                  optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001),
                   metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]
                   )  
     model.summary()
@@ -166,8 +178,6 @@ if __name__ == "__main__":
                         #cv2.imwrite("./test/{}_{}.jpg".format(i,j),img*255)
                         print(img.shape)
                         count += 1
-                #print(x.shape, y.shape)
-                #print(y)
                 exit(0)
         else:
             train_gen = DataGenerator(train_sample_list, train_label_list, seq_len, model_type, batch_size=batch_size)
@@ -181,16 +191,16 @@ if __name__ == "__main__":
         csv_logger = callbacks.CSVLogger("{}/train.log".format(log_loc))
         
     
-        """
-        early_stopping  = callbacks.EarlyStopping(monitor="train_accuray", min_delta=0.0001, patience=10, 
-                                                    verbose=2, mode="auto", baseline=None,                                                                                                         restore_best_weights=True)
-        """
+      
+        early_stopping  = callbacks.EarlyStopping(monitor="sparse_categorical_accuracy", min_delta=0.0001, patience=10, 
+                                                    verbose=2, mode="auto", baseline=None, restore_best_weights=True)
+
 
         hist = model.fit(train_gen,
                           epochs= epochs, 
-                          steps_per_epoch = 1,
+                          #steps_per_epoch = 1,
                           verbose = 2,
-                          callbacks = [csv_logger],
+                          callbacks = [csv_logger,early_stopping],
                           #use_multiprocessing=True,
                           #workers=16,
                           shuffle = False) # Already shuffled in generator at the end of each epoch      

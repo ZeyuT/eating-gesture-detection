@@ -45,8 +45,7 @@ def get_list(video_list, seq_len, stride, model_type):
             if model_type == 1:
                 label_list.append(frame_labels[i:i+seq_len])
             elif model_type == 2 or model_type == 3:
-                #label_list.append(frame_labels[i+seq_len-1])
-                label_list.append(frame_labels[i])
+                label_list.append(frame_labels[i+seq_len-1])
     return np.array(sample_list), np.array(label_list), label_counts
     
 class testG():
@@ -208,19 +207,11 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
                 x_test.append(frames[i:i+seq_len])
                 'Make predictions with batch size being test_batch'
                 if len(x_test) >= test_batch:
-                    #print(np.array(x_test).shape)
-                    #for m in range(test_batch):
-                        #for n in range(seq_len):
-                            #cv2.imwrite("./test/{}_{}.jpg".format(m,n),x_test[m][n]*255)
                     x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
                     cur_pred = np.squeeze(model.predict(x_test))
                     pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
-                    #print(frame_labels[0:test_batch])
-                    #print(model.predict(x_test))
-                    #print(np.argmax(cur_pred, axis=-1).astype("int"))
                     sample_num += len(x_test)
                     x_test = []
-                    #break
             if len(x_test) > 0:
                     x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
                     cur_pred = np.squeeze(model.predict(x_test))
@@ -228,7 +219,7 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
                     sample_num += len(x_test)
             pred = np.concatenate(pred, axis=0)
             frame_pred = np.zeros(len(frames))
-            frame_pred[0:-(seq_len)] = pred
+            frame_pred[seq_len-1:seq_len-1+len(pred)] = pred
         
         f_results = open(test_loc + "/pred_{}.txt".format(video),'w')
         f_results.write("\n".join(["frame{:05d}.ppm\t{}\t{}".format(i,j,k) for i,(j,k) in enumerate(zip(frame_labels,frame_pred))]))

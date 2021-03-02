@@ -39,12 +39,16 @@ def TimeDistributed_Conv2D_Block(input_tensor, out_channels):
     
 def CNN3D_Model(input_tensor,n_filters=8):
     x = Conv3D_Block(input_tensor,n_filters)
+    x = Conv3D_Block(x,n_filters)
     x = Conv3D_Block(x,n_filters*2)
+    #x = Conv3D_Block(x,n_filters*2)
+    #x = Conv3D_Block(x,n_filters*4)
     #x = Conv3D_Block(x,n_filters*4)
     
     x = Flatten()(x)
     x = Dense(32)(x)
     x = LeakyReLU()(x)
+    x = BatchNormalization()(x)
     x = Dropout(0.2)(x)
     x = Dense(LABEL_NUM)(x)
     
@@ -57,29 +61,30 @@ def CNNLSTM_Model(input_tensor,n_filters=8):
     x = TimeDistributed_Conv2D_Block(input_tensor,n_filters)
     x = TimeDistributed_Conv2D_Block(x,n_filters)
     x = TimeDistributed_Conv2D_Block(x,n_filters*2)
-    x = TimeDistributed_Conv2D_Block(x,n_filters*2)
-    x = TimeDistributed_Conv2D_Block(x,n_filters*4)   
+    #x = TimeDistributed_Conv2D_Block(x,n_filters*2)
+    #x = TimeDistributed_Conv2D_Block(x,n_filters*4)   
 
     x = TimeDistributed(Flatten())(x)
 
     x = TimeDistributed(Dense(64))(x)
     x = TimeDistributed(LeakyReLU())(x)
-    #x = TimeDistributed(Dropout(0.2))(x)
-    '''
-    x = LSTM(units = 128,
+    x = BatchNormalization()(x)
+    x = TimeDistributed(Dropout(0.2))(x)
+    
+    x = LSTM(units = 32,
             kernel_initializer='he_normal', bias_initializer='zeros',
             return_sequences=True)(x)
     
-    x = LSTM(units = 64, 
+    x = LSTM(units = 16, 
             kernel_initializer='he_normal', bias_initializer='zeros',
             return_sequences=True)(x)
-    '''
-    x = LSTM(units = 32, 
+    
+    x = LSTM(units = 8, 
             kernel_initializer='he_normal', bias_initializer='zeros',
-            return_sequences=True)(x)
-           
-    x = TimeDistributed(Dense(LABEL_NUM))(x)
-    #x = Dense(LABEL_NUM)(x)
+            return_sequences=False)(x) 
+    x = BatchNormalization()(x)     
+    #x = TimeDistributed(Dense(LABEL_NUM))(x)
+    x = Dense(LABEL_NUM)(x)
     outputs = Activation("softmax")(x)
     model = Model(inputs=[input_tensor], outputs=[outputs], name="CNN-LSTM")
     return model

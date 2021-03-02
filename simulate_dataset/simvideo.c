@@ -130,8 +130,8 @@ char		filename[320];		/* ppm image filename */
 char		jfilename[320];		/* jpeg image filename */
 char		gt_filename[320];		/* ground truth filename */
 char		command[640];		/* command to convert ppm to jpeg */
-char    folder[320] = "data/train";
-
+char    folder[320] = "data/test";
+int     speedup = 3;
 init_generators(0);
 
 image=(unsigned char *)calloc(ROWS*COLS,1);
@@ -158,7 +158,6 @@ for (j=0; j<FRAMES; j++)
       image[(int)y2*COLS+(int)x2]=255;	/* foreground is white */
       }
     }
-
 	/* write out frame */
   if (DEBUG)	/* switch this flag to debug, turning off saving files */
     {	/* print out positions for debugging */
@@ -176,53 +175,55 @@ for (j=0; j<FRAMES; j++)
     //system(command);
     fprintf(fpt_gt,"frame%05d.ppm\t%d\t%lf\t%lf\n",j,state,x,y);
     }
-
+    
 	/* if time to change direction, calculate new state and vector */
   if (change == 1)
     {
-    state_ok=0;			/* check if random direction will
-				** stay within image bounds */
-    while (state_ok == 0)	/* keep trying new state until it's okay */
-      {
-      state=(int)fabs(uniform_rand());	/* 0=>up, 1=>right, 2=>down, 3=>left */
-      if (state > 3)
-	state=3;		/* should be 0...3 after this */
-      state_ok=1;		/* assume ok, now check for problems */
-      if (state == 0  &&  y < 15.0+RADIUS)
-        state_ok=0;		/* try another direction */
-      if (state == 1  &&  x > (double)COLS-(8.0+RADIUS))
-        state_ok=0;		/* try another direction */
-      if (state == 2  &&  y > (double)ROWS-(8.0+RADIUS))
-        state_ok=0;		/* try another direction */
-      if (state == 3  &&  x < 15.0+RADIUS)
-        state_ok=0;		/* try another direction */
-      }
-	/* find random amount of time to move this direction */
-    delta_t=normal_rand()*2.5+5.0;
+
+   	/* find random amount of time to move this direction */
+    delta_t=normal_rand()*2.5+5.0;;
     if (delta_t < 3.0)
       delta_t=3.0;	/* min time to stay this direction */
     if (delta_t > 10.0)
       delta_t=10.0;	/* max time to stay this direction */
+
+    state_ok=0;			/* check if random direction will
+				            ** stay within image bounds */
+    while (state_ok == 0)	/* keep trying new state until it's okay */
+      {
+      state=(int)fabs(uniform_rand());	/* 0=>up, 1=>right, 2=>down, 3=>left */
+      if (state > 3)
+	      state=3;		/* should be 0...3 after this */
+      state_ok=1;		/* assume ok, now check for problems */
+      if (state == 0  &&  y < speedup*1.0*delta_t+RADIUS)
+        state_ok=0;		/* try another direction */
+      if (state == 1  &&  x > (double)COLS-(speedup*1.0*delta_t+RADIUS))
+        state_ok=0;		/* try another direction */
+      if (state == 2  &&  y > (double)ROWS-(speedup*1.0*delta_t+RADIUS))
+        state_ok=0;		/* try another direction */
+      if (state == 3  &&  x < speedup*1.0*delta_t+RADIUS)
+        state_ok=0;		/* try another direction */
+      }
     moving_count=0;	/* cumulative time spent moving this direction */
-	/* find new vector of motion */
+	  /* find new vector of motion */
     if (state == 0)
       {
       delta_x=normal_rand()/3.0;
-      delta_y=-1.0;
+      delta_y=-speedup*1.0;
       }
     if (state == 1)
       {
-      delta_x=1.0;
+      delta_x=speedup*1.0;
       delta_y=normal_rand()/3.0;
       }
     if (state == 2)
       {
       delta_x=normal_rand()/3.0;
-      delta_y=1.0;
+      delta_y=speedup*1.0;
       }
     if (state == 3)
       {
-      delta_x=-1.0;
+      delta_x=-speedup*1.0;
       delta_y=normal_rand()/3.0;
       }
     if (DEBUG)
@@ -230,7 +231,7 @@ for (j=0; j<FRAMES; j++)
 		state,delta_x,delta_y,delta_t);
     change=0;	/* reset change flag */
     }
-
+    
 	/* move object in given direction, update time spent moving */
   x+=delta_x;
   y+=delta_y;
