@@ -24,6 +24,6 @@ cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/inputs.txt /scra
 
 inputs=( $(sed -n ${PBS_ARRAY_INDEX}p inputs.txt) )
 
-python ./train_model.py ${inputs[0]} ${inputs[1]} ${inputs[2]} ${inputs[3]} ${inputs[4]} ${inputs[5]}
+python ./train_model.py ${inputs[0]} ${inputs[1]} ${inputs[2]} ${inputs[3]} ${inputs[4]} ${inputs[5]} ${inputs[6]}
 
 

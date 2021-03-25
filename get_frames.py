@@ -4,11 +4,12 @@ import subprocess
 import numpy as np
 import cv2
 
-raw_data_loc = "/home/zeyut/eat_detection/CafeteriaData/"
-        
-filelist_loc = "/home/zeyut/eat_detection/CafeteriaData/DATA_FILENAMES.txt"
+RAW_DATA_LOC = "/home/zeyut/eat_detection/CafeteriaData/"
 
-save_loc = "./VideoData/"    
+SAVE_LOC = "./VideoData/"    
+
+PRE_INTAKE_DURATION = 1000 # in ms
+AFTER_INTAKE_DURATION = 2000 # in ms
 
 def ConvertMsecFormat(msec):
     return "{:02d}:{:02d}:{:02d}".format(int(msec/(60*60*1000)),int(msec%(60*60*1000)/(60*1000)),int(msec%(60*1000)/(1000)))
@@ -27,7 +28,23 @@ def extract_raw_frames(curVideoPath,frame_save_loc, fps):
                                                                    frameNo)
         response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
         frameNo += 1
-        
+
+def load_intake_idxs(intake_gt_loc):
+    bite_locations = []
+    drink_locations = []
+    f_intake_gt = open(intake_gt_loc, "r")
+
+    for line in f_intake_gt.readlines():
+        cur_container = str.split(line, "\t")[4]
+        cur_idx = str.split(line, "\t")[1]
+        if cur_container in ["bowl","plate"]:
+            bite_locations.append(cur_idx)
+        elif cur_container in ["mug","glass"]:
+            drink_locations.append(cur_idx)
+    f_intake_gt.close()
+    
+    return bite_locations, drink_locations
+    
 def process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset, fps):        
     gesture_start, gesture_end, gesture_types = load_gt(gesture_gt_loc, video_sync_offset)
     
@@ -47,7 +64,7 @@ def process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset
             os.remove(frame_save_loc + frame_name)
             timestep += int(1 / fps * 1000)
             continue
-        # give up those frames captured after the meal started (after the last labeled gesture)
+        # give up those frames captured after the meal ended (after the last labeled gesture)
         if timestep > gesture_end[-1]:
             os.remove(frame_save_loc + frame_name)
             timestep += int(1 / fps * 1000)
@@ -79,13 +96,18 @@ def process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset
 def load_gt(gesture_gt_loc, video_sync_offset):
     def timeidx_to_ms(timeidx):
         return (int)(timeidx * 1000.0 / 15.0 + video_sync_offset);	# 1000/15 converts 15Hz data to milliseconds 
-        
+    
+    bite_locations, drink_locations = load_intake_idxs(intake_gt_loc)
+    #bite_locations, drink_locations = [], []
+    
     f_gt = open(gesture_gt_loc,'r')
     is_start = 1  # a flag used to jump to the first labeled gesture in videos
     gesture_start = []
     gesture_end = []
     gesture_types = []
     pre_end = 0
+    bite_idx = 0
+    drink_idx = 0
     for line in f_gt.readlines():
         label,cur_start,cur_end = str.split(line,"\t")[0:3]
         cur_start = int(cur_start)
@@ -96,11 +118,28 @@ def load_gt(gesture_gt_loc, video_sync_offset):
             if cur_start > pre_end + 1:
                 gesture_start.append(timeidx_to_ms(pre_end + 1)) # data index of start of gesture
                 gesture_end.append(timeidx_to_ms(cur_start - 1))	  # data index of end of gesture
-                gesture_types.append("unknown")	# data labeled as unknown
-  
-        gesture_types.append(label)
-        gesture_start.append(timeidx_to_ms(cur_start)) # data index of start of gesture
-        gesture_end.append(timeidx_to_ms(cur_end));  # data index of end of gesture  
+                gesture_types.append("non_intake")	# data labeled as unknown
+        
+        # check if any drinking/eating gesture using non-dominant hand exists in rest/other gestures
+        while bite_locations[bite_idx] < cur_start and bite_idx < len(bite_locations):
+            bite_idx += 1
+        while drink_locations[drink_idx] < cur_start and drink_idx < len(drink_locations):
+            drink_idx += 1
+        if bite_locations[bite_idx] < cur_end and label in ["rest","other"]:
+            gesture_types.append("bite")
+            gesture_start.append(timeidx_to_ms(bite_locations[bite_idx]) - PRE_INTAKE_DURATION) # data index of start of gesture
+            gesture_end.append(timeidx_to_ms(bite_locations[bite_idx]) + AFTER_INTAKE_DURATION);  # data index of end of gesture  
+        elif drink_locations[drink_idx] < cur_end and label in ["rest","other"]:
+            gesture_types.append("drink")
+            gesture_start.append(timeidx_to_ms(drink_locations[drink_idx]) - PRE_INTAKE_DURATION) # data index of start of gesture
+            gesture_end.append(timeidx_to_ms(drink_locations[drink_idx]) + AFTER_INTAKE_DURATION);  # data index of end of gesture  
+        else:
+            if label in ["drink","bite"]:
+                gesture_types.append(label)
+            else:
+                gesture_types.append("non_intake")
+            gesture_start.append(timeidx_to_ms(cur_start)) # data index of start of gesture
+            gesture_end.append(timeidx_to_ms(cur_end));  # data index of end of gesture  
         is_start = 0
         pre_end = cur_end
  	
@@ -111,17 +150,17 @@ if __name__ == "__main__":
     fps = int(sys.argv[1])
 
     try:
-        os.mkdir(save_loc)
+        os.mkdir(SAVE_LOC)
     except:
         pass
 
-    f_filelist = open(raw_data_loc + "DATA_FILENAMES.txt","r")
+    f_filelist = open(RAW_DATA_LOC + "DATA_FILENAMES.txt","r")
     f_hand_log = open("left_hand.txt","w")
     video_num = 0
     for file_loc in f_filelist.readlines():
     #file_loc = "p005/c2/20120201115556861.txt"    
 
-        syncfile_loc = raw_data_loc + "/" + str.split(file_loc,".")[0] + "_sync.txt"
+        syncfile_loc = RAW_DATA_LOC + "/" + str.split(file_loc,".")[0] + "_sync.txt"
         f_sync = open(syncfile_loc,"r")
         video_sync_offset = int(str.split(f_sync.readline(),"\n")[0])
         video_name = str.split(f_sync.readline(),"\n")[0]
@@ -130,19 +169,30 @@ if __name__ == "__main__":
             video_name = video_name + ".asf"
             
         relative_path = "/".join(str.split(file_loc,"/")[0:-1])
-        video_loc = raw_data_loc + relative_path + "/" + video_name
+        video_loc = RAW_DATA_LOC + relative_path + "/" + video_name
         
         # check the integrity of files for the current video sample
-        gesture_gt_loc = raw_data_loc + relative_path + '/gesture_union.txt'
+        gesture_gt_loc = RAW_DATA_LOC + relative_path + '/gesture_union.txt'
+        intake_gt_loc = RAW_DATA_LOC + relative_path + '/gt_union.txt' 
+
         if not os.path.exists(gesture_gt_loc):
             continue
-            
-        # check the dominant hand. Ignore people using left hands.
-        gt_loc = raw_data_loc + relative_path + '/gt_union.txt'
-        if not os.path.exists(gt_loc):
-            print("no such path: {}".format(gt_loc))
+        if not os.path.exists(intake_gt_loc):
             continue
-        f_hand = open(gt_loc, "r")
+            
+        for line in f_hand.readlines():
+            cur_hand = str.split(line, "\t")[4]
+            if cur_hand == "left":
+                left_hand_count += 1
+            total_count += 1
+            
+        ''' 
+        # check the dominant hand. Ignore people using left hands.
+        intake_gt_loc = RAW_DATA_LOC + relative_path + '/gt_union.txt'
+        if not os.path.exists(intake_gt_loc):
+            print("no such path: {}".format(intake_gt_loc))
+            continue
+        f_hand = open(intake_gt_loc, "r")
         left_hand_count = 0
         total_count = 0
         for line in f_hand.readlines():
@@ -151,12 +201,12 @@ if __name__ == "__main__":
                 left_hand_count += 1
             total_count += 1
         if left_hand_count > 0.5 * total_count:
-            print("left hand is dominant: {}".format(gt_loc))
+            print("left hand is dominant: {}".format(intake_gt_loc))
             f_hand_log.write(str.split(file_loc,"/")[0] + "/" + str.split(file_loc,"/")[1] + "\n")
             continue
         f_hand.close()
-        
-        f_windows = open(raw_data_loc + "window_loc.txt","r")
+        '''
+        f_windows = open(RAW_DATA_LOC + "window_loc.txt","r")
         window_loc = []
         for line in f_windows.readlines():
             if str.split(line,"\t")[0] == relative_path:
@@ -166,7 +216,7 @@ if __name__ == "__main__":
             #print("{} videos have been processed".format(video_num))
             continue;
         
-        frame_save_loc = save_loc + "_".join(str.split(file_loc,"/")[0:-1]) + "/"
+        frame_save_loc = SAVE_LOC + "_".join(str.split(file_loc,"/")[0:-1]) + "/"
         if not os.path.exists(frame_save_loc):
             os.makedirs(frame_save_loc)
         

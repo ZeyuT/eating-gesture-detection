@@ -13,15 +13,16 @@ def numeralize_labels(label):
     if label == "bite":
         return 0
     elif label == "drink":
-        return 1
+        return 4
     elif label == "rest":
         return 2
     elif label == "utensiling":
         return 3
     elif label == "other":
         return 4
+    # consider "unknown" being included in "other"
     elif label == "unknown":
-        return 5
+        return 4
         
 def get_list(video_list, seq_len, stride, model_type):
     sample_list = []
@@ -35,8 +36,8 @@ def get_list(video_list, seq_len, stride, model_type):
         gt_frame = [str.split(line, "\t") for line in f.readlines()]
         for frame_info in gt_frame:
             frame_locs.append(FRAME_LOC + video + "/" + frame_info[0])
-            #cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])
-            cur_labelIdx = int(frame_info[1])
+            cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])
+            #cur_labelIdx = int(frame_info[1])
             frame_labels.append(cur_labelIdx)
             label_counts[cur_labelIdx] += 1
 
@@ -71,9 +72,9 @@ class testG():
                                       (idx + 1) * self.batch_size]
         batch_label_list = self.label_list[idx * self.batch_size:
                                       (idx + 1) * self.batch_size]
-        for frame_list in batch_sample_list:
+        for sample_list in batch_sample_list:
             cur_x = []
-            for frame_loc in frame_list:
+            for frame_loc in sample_list:
                 cur_img = cv2.imread(frame_loc, cv2.IMREAD_GRAYSCALE)/255.0
                 cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
                 cur_x.append(cur_img)
@@ -98,8 +99,7 @@ class testG():
     def on_epoch_end(self):
         if self.shuffle == True:
             self.sample_list, self.label_list = shuffle(self.sample_list,self.label_list)
-            
-            
+                    
 class DataGenerator(keras.utils.Sequence):
     def __init__(self, sample_list, label_list, seq_len, model_type, batch_size=32, shuffle=True):
         'Initialization'
@@ -123,11 +123,11 @@ class DataGenerator(keras.utils.Sequence):
                                       (idx + 1) * self.batch_size]
         batch_label_list = self.label_list[idx * self.batch_size:
                                       (idx + 1) * self.batch_size]
-        for frame_list in batch_sample_list:
+        for sample_list in batch_sample_list:
             cur_x = []
-            for frame_loc in frame_list:
-                cur_img = cv2.imread(frame_loc, cv2.IMREAD_GRAYSCALE)/255.0
-                cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
+            for frame_loc in sample_list:
+                cur_img = cv2.imread(frame_loc, cv2.IMREAD_UNCHANGED)/255.0
+                #cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
                 cur_x.append(cur_img)
             batch_x.append(cur_x) 
         batch_x = np.reshape(batch_x,(-1,self.seq_len,HEIGHT,WIDTH,CHANNEL))
@@ -146,17 +146,23 @@ class DataGenerator(keras.utils.Sequence):
             batch_y = np.array(batch_y)       
               
         return batch_x, batch_y
-        
+    
+    def read_image(loc):
+        img = cv2.imread(loc, cv2.IMREAD_UNCHANGED)/255.0
+        return cv2.resize(img, (WIDTH, HEIGHT))
+         
     def on_epoch_end(self):
         if self.shuffle == True:
             self.sample_list, self.label_list = shuffle(self.sample_list,self.label_list)
     
-def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
+def test_model(model, videos_test, test_loc, seq_len, test_stride, model_type):
+    # test_stride is used for mdoel_type 1
     test_batch = 1024
     f_matrices = open(test_loc + "/matrices.txt",'w')
     print("{} videos in testing set".format(len(videos_test)))
     print("testing batch size: {}\n".format(test_batch))
     total_TP = 0
+    total_P = 0
     total_pred = 0
     sample_num = 0
     for video in videos_test:
@@ -167,17 +173,17 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
       
         gt_frame = [str.split(line, "\t") for line in f.readlines()]
         for frame_info in gt_frame:
-            cur_img = cv2.imread(FRAME_LOC + video + "/" + frame_info[0], cv2.IMREAD_GRAYSCALE)/255.0 
+            cur_img = cv2.imread(FRAME_LOC + video + "/" + frame_info[0], cv2.IMREAD_UNCHANGED)/255.0 
             cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
             frames.append(cur_img)
-            cur_labelIdx = int(frame_info[1])
-            #cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])
+            #cur_labelIdx = int(frame_info[1])
+            cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])
             frame_labels.append(cur_labelIdx)
         frame_labels = np.array(frame_labels)
         pred = []
         x_test = []
         if model_type == 1:
-            for i in range(0, len(frames)-seq_len):
+            for i in range(0, len(frames)-seq_len, test_stride):
                 x_test.append(frames[i:i+seq_len])
                 'Make predictions with batch size being test_batch'
                 if len(x_test) >= test_batch:
@@ -194,10 +200,10 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
                     
             pred = np.concatenate(pred, axis=0)
             'build prediction heat map'
-            pred_heat = np.zeros((len(frame_labels),6))
+            pred_heat = np.zeros((len(frame_labels),LABEL_NUM))
             for i in range(len(pred)):
                 for j in range(len(pred[i])):
-                    pred_heat[stride*i+j,pred[i,j]] += 1
+                    pred_heat[test_stride*i+j][pred[i][j]] += 1
             'get frame wise predictions with max vote strategy'
             frame_pred = np.argmax(pred_heat, axis=-1)
          
@@ -224,15 +230,15 @@ def test_model(model, videos_test, test_loc, seq_len, stride, model_type):
         f_results = open(test_loc + "/pred_{}.txt".format(video),'w')
         f_results.write("\n".join(["frame{:05d}.ppm\t{}\t{}".format(i,j,k) for i,(j,k) in enumerate(zip(frame_labels,frame_pred))]))
         f_results.close()   
-        cur_TP = np.sum((frame_pred == frame_labels))
-
+        cur_TP = np.sum((frame_pred == frame_labels)*(frame_labels==0))
+        cur_P = np.sum(frame_labels==0)
         total_TP += cur_TP
         total_pred += len(frame_pred)
-        
+        total_P += cur_P
         f_matrices.write('video name: {}\n'.format(video))
         print('video name: {}'.format(video))  
         f_matrices.write('acc: {}\n'.format(cur_TP/len(frame_pred)))
-        print('acc: {}\n'.format(cur_TP/len(frame_pred)))  
+        print('TP: {} P: {} sensitivity: {}\n'.format(total_TP, total_P, total_TP/total_P))  
         
     f_matrices.write('summary\n')
     print('summary')

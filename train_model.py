@@ -53,7 +53,7 @@ def weighted_sparse_categorical_crossentropy(weights):
     https://github.com/tensorflow/models/blob/master/official/nlp/modeling/losses/weighted_sparse_categorical_crossentropy.py
     '''    
     weights = tf.cast(weights, tf.float32)
-    scce = tf.keras.losses.SparseCategoricalCrossentropy()
+    scce = tf.keras.losses.SparseCategoricalCrossentropy(reduction=tf.keras.losses.Reduction.SUM)
     def loss(y_true, y_pred):
         example_losses = scce(y_true, y_pred)
         return tf.math.divide_no_nan(
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         stride = int(sys.argv[6])
     
     if network == "CNNLSTM_Model":
-        model_type = 3
+        model_type = 1
     elif network == "CNN3D_Model":
         model_type = 2
         
@@ -137,9 +137,11 @@ if __name__ == "__main__":
     else:
         video_list = [f for f in os.listdir(FRAME_LOC) if f.startswith("p")]
         video_list.sort(reverse=False)
+        #video_list = video_list[0:20]
         train_split_ratio = 0.8
         train_video_list = video_list[0:int(len(video_list)*train_split_ratio)]
-        test_video_list = video_list[int(len(video_list)*train_split_ratio):]
+        test_video_list = video_list[0:int(len(video_list)*train_split_ratio)]
+        #test_video_list = video_list[int(len(video_list)*train_split_ratio):]
         
     train_sample_list, train_label_list, label_counts = get_list(train_video_list, seq_len, stride, model_type)
     weights = class_weights(label_counts)
@@ -147,20 +149,23 @@ if __name__ == "__main__":
     print("{} patterns in training set".format(len(train_sample_list)))
     print("class sizes: {}".format(label_counts))
     print("class weights: {}".format(weights)) 
-    # loss function depends on the actual NN
-    loss = weighted_sparse_categorical_crossentropy(weights)
-    
-    input_ori = Input((seq_len,HEIGHT,WIDTH,CHANNEL), name="ori",dtype=K.floatx())
-    if model_type == 1 or model_type == 3:
-        model = CNNLSTM_Model(input_ori)
-    elif model_type == 2:
-        model = CNN3D_Model(input_ori)
-    model.compile(
-                  loss = loss,
-                  #loss= tf.keras.losses.SparseCategoricalCrossentropy(),
-                  optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001),
-                  metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]
-                  )  
+
+
+    strategy = tf.distribute.MirroredStrategy()
+    with strategy.scope():
+        # loss function depends on the actual NN
+        loss = weighted_sparse_categorical_crossentropy(weights)
+        input_ori = Input((seq_len,HEIGHT,WIDTH,CHANNEL), name="ori",dtype=K.floatx())
+        if model_type == 1 or model_type == 3:
+            model = CNNLSTM_Model(input_ori)
+        elif model_type == 2:
+            model = CNN3D_Model(input_ori)
+        model.compile(
+                      loss = loss,
+                      #loss= tf.keras.losses.SparseCategoricalCrossentropy(),
+                      optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001),
+                      metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]
+                      )  
     model.summary()
     
     if train > 0 and train < 4:
@@ -198,11 +203,11 @@ if __name__ == "__main__":
 
         hist = model.fit(train_gen,
                           epochs= epochs, 
-                          #steps_per_epoch = 1,
-                          verbose = 2,
+                          #steps_per_epoch = 600,
+                          verbose = 1,
                           callbacks = [csv_logger,early_stopping],
                           #use_multiprocessing=True,
-                          #workers=16,
+                          #workers=8,
                           shuffle = False) # Already shuffled in generator at the end of each epoch      
         del train_gen
         model.save_weights("{}/model.h5".format(model_loc))        
