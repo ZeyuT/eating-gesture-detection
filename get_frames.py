@@ -8,8 +8,8 @@ RAW_DATA_LOC = "/home/zeyut/eat_detection/CafeteriaData/"
 
 SAVE_LOC = "./VideoData/"    
 
-PRE_INTAKE_DURATION = 1000 # in ms
-AFTER_INTAKE_DURATION = 2000 # in ms
+PRE_INTAKE_DURATION = 500 # in ms
+AFTER_INTAKE_DURATION = 8000 # in ms
 
 def ConvertMsecFormat(msec):
     return "{:02d}:{:02d}:{:02d}".format(int(msec/(60*60*1000)),int(msec%(60*60*1000)/(60*1000)),int(msec%(60*1000)/(1000)))
@@ -36,7 +36,9 @@ def load_intake_idxs(intake_gt_loc):
 
     for line in f_intake_gt.readlines():
         cur_container = str.split(line, "\t")[4]
-        cur_idx = str.split(line, "\t")[1]
+        if cur_container == '':
+            continue
+        cur_idx = int(str.split(line, "\t")[1])
         if cur_container in ["bowl","plate"]:
             bite_locations.append(cur_idx)
         elif cur_container in ["mug","glass"]:
@@ -56,17 +58,17 @@ def process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset
     gesture_idx = 0
     end_timestep = gesture_end[0]
 
-    f_gt_frame = open(frame_save_loc + "gt_frame.txt","w")
+    f_gt_frame = open(frame_save_loc + "gt_frame_3labels.txt","w")
     print("--------------------------------------------")
     for frame_name in frame_names:
         # give up those frames captured before the meal started (before the first labeled gesture)
         if timestep < gesture_start[0]:
-            os.remove(frame_save_loc + frame_name)
+            #os.remove(frame_save_loc + frame_name)
             timestep += int(1 / fps * 1000)
             continue
         # give up those frames captured after the meal ended (after the last labeled gesture)
         if timestep > gesture_end[-1]:
-            os.remove(frame_save_loc + frame_name)
+            #os.remove(frame_save_loc + frame_name)
             timestep += int(1 / fps * 1000)
             continue
         
@@ -79,7 +81,7 @@ def process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset
  
         # write gt gesture to file
         f_gt_frame.write(frame_name + "\t" + gesture_types[gesture_idx] + "\n")
-       
+        
         # crop and resize frames, and replace in place
         frame = cv2.imread(frame_save_loc + frame_name, cv2.IMREAD_UNCHANGED)
         crop = frame[window_loc[1]:window_loc[3],window_loc[0]:window_loc[2],:]
@@ -119,27 +121,44 @@ def load_gt(gesture_gt_loc, video_sync_offset):
                 gesture_start.append(timeidx_to_ms(pre_end + 1)) # data index of start of gesture
                 gesture_end.append(timeidx_to_ms(cur_start - 1))	  # data index of end of gesture
                 gesture_types.append("non_intake")	# data labeled as unknown
-        
-        # check if any drinking/eating gesture using non-dominant hand exists in rest/other gestures
-        while bite_locations[bite_idx] < cur_start and bite_idx < len(bite_locations):
-            bite_idx += 1
-        while drink_locations[drink_idx] < cur_start and drink_idx < len(drink_locations):
-            drink_idx += 1
-        if bite_locations[bite_idx] < cur_end and label in ["rest","other"]:
-            gesture_types.append("bite")
-            gesture_start.append(timeidx_to_ms(bite_locations[bite_idx]) - PRE_INTAKE_DURATION) # data index of start of gesture
-            gesture_end.append(timeidx_to_ms(bite_locations[bite_idx]) + AFTER_INTAKE_DURATION);  # data index of end of gesture  
-        elif drink_locations[drink_idx] < cur_end and label in ["rest","other"]:
-            gesture_types.append("drink")
-            gesture_start.append(timeidx_to_ms(drink_locations[drink_idx]) - PRE_INTAKE_DURATION) # data index of start of gesture
-            gesture_end.append(timeidx_to_ms(drink_locations[drink_idx]) + AFTER_INTAKE_DURATION);  # data index of end of gesture  
-        else:
-            if label in ["drink","bite"]:
-                gesture_types.append(label)
+
+        # check if any drinking/eating gesture using non-dominant hand exists in rest/other gestures            
+        while (1):
+            if bite_idx >= len(bite_locations)-1:
+                break
+            if bite_locations[bite_idx] < cur_start:
+                bite_idx += 1
+            else:
+                break
+        while (1):
+            if drink_idx >= len(drink_locations)-1:
+                break
+            if drink_locations[drink_idx] < cur_start:
+                drink_idx += 1
+            else:
+                break
+        if label in ["rest","other"]:
+            if len(bite_locations) != 0 and bite_locations[bite_idx] >= cur_start and bite_locations[bite_idx] <= cur_end:
+                gesture_types.append("bite")
+                gesture_start.append(max(timeidx_to_ms(bite_locations[bite_idx]) - PRE_INTAKE_DURATION, timeidx_to_ms(cur_start))) # data index of start of gesture
+                gesture_end.append(min(timeidx_to_ms(bite_locations[bite_idx]) + AFTER_INTAKE_DURATION, timeidx_to_ms(cur_end)))  # data index of end of gesture  
+            elif len(drink_locations) != 0 and drink_locations[drink_idx] >= cur_start and drink_locations[drink_idx] <= cur_end:
+                gesture_types.append("drink")
+                gesture_start.append(max(timeidx_to_ms(drink_locations[drink_idx]) - PRE_INTAKE_DURATION, timeidx_to_ms(cur_start))) # data index of start of gesture
+                gesture_end.append(min(timeidx_to_ms(drink_locations[drink_idx]) + AFTER_INTAKE_DURATION, timeidx_to_ms(cur_end)))  # data index of end of gesture  
             else:
                 gesture_types.append("non_intake")
+                gesture_start.append(timeidx_to_ms(cur_start)) # data index of start of gesture
+                gesture_end.append(timeidx_to_ms(cur_end));  # data index of end of gesture  
+        elif label in ["drink","bite"]:
+            gesture_types.append(label)
             gesture_start.append(timeidx_to_ms(cur_start)) # data index of start of gesture
             gesture_end.append(timeidx_to_ms(cur_end));  # data index of end of gesture  
+        else:
+            gesture_types.append("non_intake")
+            gesture_start.append(timeidx_to_ms(cur_start)) # data index of start of gesture
+            gesture_end.append(timeidx_to_ms(cur_end));  # data index of end of gesture  
+            
         is_start = 0
         pre_end = cur_end
  	
@@ -155,10 +174,11 @@ if __name__ == "__main__":
         pass
 
     f_filelist = open(RAW_DATA_LOC + "DATA_FILENAMES.txt","r")
-    f_hand_log = open("left_hand.txt","w")
+    #f_hand_log = open("left_hand.txt","w")
     video_num = 0
-    for file_loc in f_filelist.readlines():
-    #file_loc = "p005/c2/20120201115556861.txt"    
+    filelists = f_filelist.readlines()
+    #filelists = ["p012/c2/20120203173709955.txt"]
+    for file_loc in filelists:
 
         syncfile_loc = RAW_DATA_LOC + "/" + str.split(file_loc,".")[0] + "_sync.txt"
         f_sync = open(syncfile_loc,"r")
@@ -179,12 +199,6 @@ if __name__ == "__main__":
             continue
         if not os.path.exists(intake_gt_loc):
             continue
-            
-        for line in f_hand.readlines():
-            cur_hand = str.split(line, "\t")[4]
-            if cur_hand == "left":
-                left_hand_count += 1
-            total_count += 1
             
         ''' 
         # check the dominant hand. Ignore people using left hands.
@@ -221,13 +235,13 @@ if __name__ == "__main__":
             os.makedirs(frame_save_loc)
         
         # load video file
-        #extract_raw_frames(video_loc,frame_save_loc, fps)        
-        #process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset, fps)
+        extract_raw_frames(video_loc,frame_save_loc, fps)        
+        process_frames(window_loc, frame_save_loc, gesture_gt_loc, video_sync_offset, fps)
            
         video_num += 1
         if video_num >= 50:
    			   break
-    f_hand_log.close()
+    #f_hand_log.close()
     f_filelist.close()
     f_windows.close()
     

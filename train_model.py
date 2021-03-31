@@ -11,16 +11,11 @@ from tensorflow.keras import callbacks
 import tensorflow.keras.backend as K
 
 from models import CNN3D_Model, CNNLSTM_Model
-from utils import get_list, test_model, DataGenerator, testG
-from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_TABLE,LABEL_NUM
-            
-def class_weights(label_counts):
-    ret = []
-    total = float(sum(label_counts))
-    for count in label_counts:
-        ret.append(total/(count * len(label_counts)))
-    return np.array(ret)
-        
+from utils import class_weights, get_list, test_model, DataGenerator, testG
+from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM
+
+from math import e
+                    
 def weighted_sparse_categorical_crossentropy(weights):
     """
     A weighted version of keras.objectives.sparse_categorical_crossentropy
@@ -91,13 +86,14 @@ if __name__ == "__main__":
         batch_size = 4
         epochs = 1
         network = "CNNLSTM_Model"
+        weight_type = 0
     else:
         batch_size = int(sys.argv[2])
         epochs = int(sys.argv[3])
         network = sys.argv[4]
         seq_len = int(sys.argv[5])
         stride = int(sys.argv[6])
-    
+        weight_type = int(sys.argv[7])
     if network == "CNNLSTM_Model":
         model_type = 1
     elif network == "CNN3D_Model":
@@ -106,12 +102,14 @@ if __name__ == "__main__":
     print("model: {}".format(network))
     print("batch size: {}  epochs: {}".format(batch_size, epochs))
     print("sequence length: {}  stride: {}\n".format(seq_len, stride))
+    print("weight_type: {}\n".format(weight_type))
     sys.stdout.flush()
 
-    
-    log_loc = "./log_{}_{}_{}_{}".format(network,epochs,seq_len,stride)
-    model_loc = "./model_{}_{}_{}_{}".format(network,epochs,seq_len,stride)
-    test_loc = "./test_{}_{}_{}_{}".format(network,epochs,seq_len,stride)
+    #v{x}: version x for class weight calculation
+    #bcb: batch class balance. needs to find a way to convert y_true to numpy. leave it on todo list.
+    log_loc = "./log_{}_{}_{}_{}_v{}".format(network,epochs,seq_len,stride,weight_type)
+    model_loc = "./model_{}_{}_{}_{}_v{}".format(network,epochs,seq_len,stride,weight_type)
+    test_loc = "./test_{}_{}_{}_{}_v{}_8videos".format(network,epochs,seq_len,stride,weight_type)
     try:
         os.mkdir(log_loc)
     except:
@@ -137,69 +135,64 @@ if __name__ == "__main__":
     else:
         video_list = [f for f in os.listdir(FRAME_LOC) if f.startswith("p")]
         video_list.sort(reverse=False)
-        #video_list = video_list[0:20]
+        video_list = video_list[0:40]
         train_split_ratio = 0.8
         train_video_list = video_list[0:int(len(video_list)*train_split_ratio)]
-        test_video_list = video_list[0:int(len(video_list)*train_split_ratio)]
-        #test_video_list = video_list[int(len(video_list)*train_split_ratio):]
+        #test_video_list = train_video_list
+        test_video_list = video_list[int(len(video_list)*train_split_ratio):]
         
     train_sample_list, train_label_list, label_counts = get_list(train_video_list, seq_len, stride, model_type)
-    weights = class_weights(label_counts)
+    weights = class_weights(train_label_list,weight_type)
     print("{} videos in training set".format(len(train_video_list)))
     print("{} patterns in training set".format(len(train_sample_list)))
     print("class sizes: {}".format(label_counts))
     print("class weights: {}".format(weights)) 
 
-
-    strategy = tf.distribute.MirroredStrategy()
-    with strategy.scope():
-        # loss function depends on the actual NN
-        loss = weighted_sparse_categorical_crossentropy(weights)
-        input_ori = Input((seq_len,HEIGHT,WIDTH,CHANNEL), name="ori",dtype=K.floatx())
-        if model_type == 1 or model_type == 3:
-            model = CNNLSTM_Model(input_ori)
-        elif model_type == 2:
-            model = CNN3D_Model(input_ori)
-        model.compile(
-                      loss = loss,
-                      #loss= tf.keras.losses.SparseCategoricalCrossentropy(),
-                      optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001),
-                      metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]
-                      )  
+    if train == 2:
+        # for debugging
+        print(train_sample_list.shape)
+        print(train_label_list.shape)
+        train_gen = testG(train_sample_list, train_label_list, seq_len, model_type, batch_size=batch_size)
+        count = 0
+        for idx in range(train_gen.len()):
+            x, y = train_gen.getitem(idx)
+            for i,seq in enumerate(x):
+                for j,img in enumerate(seq):
+                    #img = np.squeeze(img)
+                    #cv2.imwrite("./test/{}_{}.jpg".format(i,j),img*255)
+                    print(img.shape)
+                    count += 1
+            exit(0)
+    else:
+        train_gen = DataGenerator(train_sample_list, train_label_list, seq_len, model_type, batch_size=batch_size)
+    elapsed_time = time.time() - start_time
+    print("Finished training data generator preparation, elapsed time: {0:.6f} s".format(elapsed_time)) 
+        
+    #strategy = tf.distribute.MirroredStrategy()
+    #with strategy.scope():
+    # loss function depends on the actual NN
+    loss = weighted_sparse_categorical_crossentropy(weights)
+    input_ori = Input((seq_len,HEIGHT,WIDTH,CHANNEL), name="ori",dtype=K.floatx())
+    if model_type == 1 or model_type == 3:
+        model = CNNLSTM_Model(input_ori)
+    elif model_type == 2:
+        model = CNN3D_Model(input_ori)
+    model.compile(
+                  loss = loss,
+                  #loss= tf.keras.losses.SparseCategoricalCrossentropy(),
+                  optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.001),
+                  metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]
+                  )  
     model.summary()
     
-    if train > 0 and train < 4:
-        if train == 2:
-            # for debugging
-            print(train_sample_list.shape)
-            print(train_label_list.shape)
-            train_gen = testG(train_sample_list, train_label_list, seq_len, model_type, batch_size=batch_size)
-            count = 0
-            for idx in range(train_gen.len()):
-                x, y = train_gen.getitem(idx)
-                for i,seq in enumerate(x):
-                    for j,img in enumerate(seq):
-                        #img = np.squeeze(img)
-                        #cv2.imwrite("./test/{}_{}.jpg".format(i,j),img*255)
-                        print(img.shape)
-                        count += 1
-                exit(0)
-        else:
-            train_gen = DataGenerator(train_sample_list, train_label_list, seq_len, model_type, batch_size=batch_size)
-        
-        elapsed_time = time.time() - start_time
-        print("Finished training data generator preparation, elapsed time: {0:.6f} s".format(elapsed_time)) 
-        
+    if train > 0 and train < 4:        
         print("Training {} model".format(network))  
         start_time = time.time()
         sys.stdout.flush()         
         csv_logger = callbacks.CSVLogger("{}/train.log".format(log_loc))
         
-    
-      
         early_stopping  = callbacks.EarlyStopping(monitor="sparse_categorical_accuracy", min_delta=0.0001, patience=10, 
                                                     verbose=2, mode="auto", baseline=None, restore_best_weights=True)
-
 
         hist = model.fit(train_gen,
                           epochs= epochs, 

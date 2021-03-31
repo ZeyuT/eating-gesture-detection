@@ -9,7 +9,7 @@ def Conv3D_Block(input_tensor, out_channels):
                 kernel_initializer="he_normal",bias_initializer="zeros")(input_tensor)
     x = BatchNormalization()(x)
     x = LeakyReLU()(x)
-    x = MaxPooling3D(pool_size=[2,2,2], strides=[2, 2, 2], padding="same")(x)
+    #x = MaxPooling3D(pool_size=[2,2,2], strides=[2, 2, 2], padding="same")(x)
     
     # second layer
     x = Conv3D(filters=out_channels, kernel_size=[3,3,3], padding="same",
@@ -26,7 +26,7 @@ def TimeDistributed_Conv2D_Block(input_tensor, out_channels):
                         bias_initializer="zeros"))(input_tensor)
     x = TimeDistributed(BatchNormalization())(x)
     x = TimeDistributed(LeakyReLU())(x)
-    x = TimeDistributed(MaxPooling2D(pool_size=[2,2], strides=[2,2], padding="same"))(x)
+    #x = TimeDistributed(MaxPooling2D(pool_size=[2,2], strides=[2,2], padding="same"))(x)
     
     # second layer
     x = TimeDistributed(Conv2D(filters=out_channels, kernel_size=[3,3], padding="same",
@@ -41,15 +41,14 @@ def CNN3D_Model(input_tensor,n_filters=16):
     x = Conv3D_Block(input_tensor,n_filters)
     x = Conv3D_Block(x,n_filters)
     x = Conv3D_Block(x,n_filters*2)
-    #x = Conv3D_Block(x,n_filters*2)
-    #x = Conv3D_Block(x,n_filters*4)
-    #x = Conv3D_Block(x,n_filters*4)
+    x = Conv3D_Block(x,n_filters*2)
+    x = Conv3D_Block(x,n_filters*4)
     
     x = Flatten()(x)
     x = Dense(128)(x)
     x = LeakyReLU()(x)
     x = BatchNormalization()(x)
-    x = Dropout(0.2)(x)
+    x = Dropout(0.3)(x)
     x = Dense(LABEL_NUM)(x)
     
     outputs = Activation("softmax")(x)
@@ -61,25 +60,25 @@ def CNNLSTM_Model(input_tensor,n_filters=16):
     x = TimeDistributed_Conv2D_Block(input_tensor,n_filters)
     x = TimeDistributed_Conv2D_Block(x,n_filters)
     x = TimeDistributed_Conv2D_Block(x,n_filters*2)
-    #x = TimeDistributed_Conv2D_Block(x,n_filters*2)
-    #x = TimeDistributed_Conv2D_Block(x,n_filters*4)   
+    x = TimeDistributed_Conv2D_Block(x,n_filters*2)
+    x = TimeDistributed_Conv2D_Block(x,n_filters*4)   
 
     x = TimeDistributed(Flatten())(x)
 
     x = TimeDistributed(Dense(128))(x)
     x = TimeDistributed(LeakyReLU())(x)
     x = BatchNormalization()(x)
-    x = TimeDistributed(Dropout(0.2))(x)
+    x = TimeDistributed(Dropout(0.3))(x)
     
     x = LSTM(units = 64,
             kernel_initializer='he_normal', bias_initializer='zeros',
             return_sequences=True)(x)
     x = BatchNormalization()(x)         
-    x = LSTM(units = 32, 
+    x = LSTM(units = 64, 
             kernel_initializer='he_normal', bias_initializer='zeros',
             return_sequences=True)(x)
     x = BatchNormalization()(x)         
-    x = LSTM(units = 16, 
+    x = LSTM(units = 32, 
             kernel_initializer='he_normal', bias_initializer='zeros',
             return_sequences=True)(x) 
     x = BatchNormalization()(x)     
