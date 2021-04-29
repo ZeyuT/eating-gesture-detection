@@ -13,4 +13,4 @@ multiprocess==0.70.11.1
 
 <i> Note: some dependencies may not be used for now, but are reserved for possible future purpose </i>
 
-Dependencies installing pipeline: [env-2.4.sh](https://github.com/ZeyuT/eating-gesture-detection/blob/main/env-2.4.sh)
+Dependencies installing pipeline: [env-2.4.sh](https://github.com/ZeyuT/eating-gesture-detection/blob/main/ins_env_2.4.sh)
