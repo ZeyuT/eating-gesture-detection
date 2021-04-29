@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.layers import LeakyReLU,Conv2D,Activation,MaxPooling2D,concatenate,ConvLSTM2D,BatchNormalization,LSTM,GRU,TimeDistributed
-from tensorflow.keras.layers import Conv3D, MaxPooling3D, Flatten, Dense, Dropout
+from tensorflow.keras.layers import Input,Conv3D,MaxPooling3D,Flatten,Dense,Dropout
 from tensorflow.keras import Model,initializers, regularizers
 from constants import LABEL_NUM
 def Conv3D_Block(input_tensor, out_channels):
@@ -86,4 +86,38 @@ def CNNLSTM_Model(input_tensor,n_filters=16):
     #x = Dense(LABEL_NUM)(x)
     outputs = Activation("softmax")(x)
     model = Model(inputs=[input_tensor], outputs=[outputs], name="CNN-LSTM")
+    return model
+    
+    
+def build_spatial_encoder():
+    resnet = tf.keras.applications.ResNet50V2(
+            include_top=False,
+            weights="imagenet",
+            pooling="avg")
+    for layer in resnet.layers:
+        layer.trainable = False
+    input_tensor = Input((224,224,3), name="frame")
+    outputs = resnet(input_tensor)
+    model = Model(inputs=[input_tensor], outputs=[outputs], name="resnet50v2")
+    return model
+
+def RESLSTM_Model(input_tensor):    
+    spatial_encoder = build_spatial_encoder()
+    x = TimeDistributed(spatial_encoder,name="spatial_encoder")(input_tensor)
+    x = TimeDistributed(Dropout(0.3),name="spatial_dropout")(x)
+    x = LSTM(units = 64,
+            kernel_initializer='he_normal', bias_initializer='zeros',
+            return_sequences=True, name="lstm_1")(x)
+    x = BatchNormalization()(x)         
+    x = LSTM(units = 64, 
+            kernel_initializer='he_normal', bias_initializer='zeros',
+            return_sequences=True, name="lstm_2")(x)
+    x = BatchNormalization()(x)         
+    x = LSTM(units = 32, 
+            kernel_initializer='he_normal', bias_initializer='zeros',
+            return_sequences=True, name="lstm_3")(x) 
+    x = BatchNormalization()(x)     
+    x = TimeDistributed(Dense(LABEL_NUM))(x)
+    outputs = Activation("softmax")(x)
+    model = Model(inputs=[input_tensor], outputs=[outputs], name="resnet_LSTM")
     return model
