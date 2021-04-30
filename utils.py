@@ -1,31 +1,12 @@
 import sys
 import os
 import numpy as np
-import cv2
-import math
-from collections import defaultdict
-import tensorflow as tf
-from tensorflow import keras
-from sklearn.utils import shuffle
+import torch.utils.data as data
+import torch
+import torchvision
+import torchvision.transforms as transforms
+from PIL import Image
 from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM, LABEL_TABLE
-
-def numeralize_labels(label):
-    '''
-    if label == "bite":
-        return 0
-    elif label == "drink":
-        return 4
-    elif label == "rest":
-        return 2
-    elif label == "utensiling":
-        return 3
-    elif label == "other":
-        return 4
-    # consider "unknown" being included in "other"
-    elif label == "unknown":
-        return 4
-    '''
-    return LABEL_TABLE[label]
 
 def class_weights(label_list, weight_type):
     class_counts = []
@@ -70,166 +51,81 @@ def class_weights(label_list, weight_type):
                 ret.append(1/LABEL_NUM)
     return np.array(ret)
             
-def get_list(video_list, seq_len, stride, model_type):
-    sample_list = []
-    label_list = []
-    label_counts = [0 for i in range(LABEL_NUM)]
-    for video in video_list:
-        frame_locs = []
-        frame_labels = []
-        f = open(FRAME_LOC + video + "/gt_frame_3labels.txt","r")
-        gt_frame = [str.split(line, "\t") for line in f.readlines()]
-        for frame_info in gt_frame:
-            frame_locs.append(FRAME_LOC + video + "/" + frame_info[0])
-            cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])
-            #cur_labelIdx = int(frame_info[1])
-            frame_labels.append(cur_labelIdx)
-            label_counts[cur_labelIdx] += 1
-
-        for i in range(0, len(frame_locs)-seq_len, stride):
-            sample_list.append(frame_locs[i:i+seq_len])
-            if model_type == 1:
-                label_list.append(frame_labels[i:i+seq_len])
-            elif model_type == 2 or model_type == 3:
-                label_list.append(frame_labels[i+seq_len-1])
-    return np.array(sample_list), np.array(label_list), label_counts
-    
-class testG():
-    def __init__(self, sample_list, label_list, seq_len, model_type, batch_size=32, shuffle=True):
+class FrameSequenceDataset(data.Dataset):
+    def __init__(self,root_path,video_list,seq_len,stride,model_type,transform,test_mode=False):
         'Initialization'
-        self.sample_list = sample_list
-        self.label_list = label_list
-        self.seq_len = seq_len
+        self.root_path = root_path
         self.model_type = model_type
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-        self.on_epoch_end()
-
-    def len(self):
-        'Number of batch in the Sequence'
-        return math.ceil(len(self.sample_list) / self.batch_size)
-
-    def getitem(self, idx):
-        'Gets batch at position idx'
-        batch_x = []
-        batch_y = []
-        batch_sample_list = self.sample_list[idx * self.batch_size:
-                                      (idx + 1) * self.batch_size]
-        batch_label_list = self.label_list[idx * self.batch_size:
-                                      (idx + 1) * self.batch_size]
-        for sample_list in batch_sample_list:
-            cur_x = []
-            for frame_loc in sample_list:
-                cur_img = cv2.imread(frame_loc, cv2.IMREAD_GRAYSCALE)/255.0
-                cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
-                cur_x.append(cur_img)
-            batch_x.append(cur_x) 
-        batch_x = np.reshape(batch_x,(-1,self.seq_len,HEIGHT,WIDTH,CHANNEL))
-        
-        if self.model_type == 1:
-            for label_list in batch_label_list:
-                cur_y = []
-                for label in label_list:
-                    cur_y.append(label)
-                batch_y.append(cur_y)  
-            batch_y = np.reshape(batch_y, (-1,self.seq_len))
-            
-        elif self.model_type == 2 or self.model_type == 3:
-            for label in batch_label_list:
-                batch_y.append(label)         
-            batch_y = np.array(batch_y)                   
-        
-        return batch_x, batch_y
-        
-    def on_epoch_end(self):
-        if self.shuffle == True:
-            self.sample_list, self.label_list = shuffle(self.sample_list,self.label_list)
-                    
-class DataGenerator(keras.utils.Sequence):
-    def __init__(self, sample_list, label_list, seq_len, model_type, batch_size=32, max_delta=0.4, flip_ratio=0.5, shuffle=True):
-        'Initialization'
-        self.sample_list = sample_list
-        self.label_list = label_list
+        self.transform = transform
+        self.test_mode = test_mode
+        self.sample_list = []
+        self.label_list = []
         self.seq_len = seq_len
-        self.model_type = model_type
-        self.batch_size = batch_size
-        self.max_delta = max_delta
-        self.flip_ratio = flip_ratio
-        self.shuffle = shuffle
-        self.on_epoch_end()
-        self.batch_weights = np.ones(LABEL_NUM)
-
+        self._get_data_list(video_list, seq_len, stride, model_type)
+        
     def __len__(self):
-        'Number of batch in the Sequence'
-        return math.ceil(len(self.sample_list) / self.batch_size)
+        return len(self.sample_list)
 
     def __getitem__(self, idx):
-        'Gets batch at position idx'
-        batch_x = []
-        batch_y = []
-        '''
-        Randomly augment samples by horizontal flipping and adding a random brightness jitter
-        each sample has 50% chance to be horizontal flipped
-        each sample is added with a random brightness jitter
-        '''
-        batch_flip_flags = np.random.rand(self.batch_size) < self.flip_ratio
-        batch_deltas = self.max_delta*(2*np.random.rand(self.batch_size)-1)
-        batch_sample_list = self.sample_list[idx * self.batch_size:
-                                      (idx + 1) * self.batch_size]
-        batch_label_list = self.label_list[idx * self.batch_size:
-                                      (idx + 1) * self.batch_size]
-        for sample_list,cur_flip_flag,cur_delta in zip(batch_sample_list,batch_flip_flags,batch_deltas):
-            cur_x = []
-            for frame_loc in sample_list:
-                cur_img = cv2.imread(frame_loc, cv2.IMREAD_UNCHANGED)
-                cur_img = self.flip_augment(cur_img,cur_flip_flag)
-                cur_img = self.brightness_augment(cur_img, cur_delta)
-                cur_img = cur_img/255.0
-                #cur_img = cv2.resize(cur_img, (WIDTH, HEIGHT))
-                cur_x.append(cur_img)
-            batch_x.append(cur_x) 
-        batch_x = np.reshape(batch_x,(-1,self.seq_len,HEIGHT,WIDTH,CHANNEL))
-        
-        if self.model_type == 1:
-            for label_list in batch_label_list:
-                cur_y = []
-                for label in label_list:
-                    cur_y.append(label)
-                batch_y.append(cur_y)  
-            batch_y = np.reshape(batch_y, (-1,self.seq_len))
-            
-        elif self.model_type == 2 or self.model_type == 3:
-            for label in batch_label_list:
-                batch_y.append(label)         
-            batch_y = np.array(batch_y)    
-        del cur_img   
-        return batch_x, batch_y
-        
-    def flip_augment(self, img, flip_flag): 
-        if flip_flag:
-            return img[:,::-1,:]
-        else:
-            return img
-            
-    def brightness_augment(self, img, delta): 
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV) #convert to hsv
-        hsv = np.array(hsv, dtype=np.float32)
-        hsv[:, :, 2] = hsv[:, :, 2] * (1+delta) #scale channel V uniformly
-        hsv[:, :, 2][hsv[:, :, 2] > 255] = 255.0 #reset out of range values
-        bgr = cv2.cvtColor(np.array(hsv, dtype=np.uint8), cv2.COLOR_HSV2BGR)
-        return bgr
-         
-    def on_epoch_end(self):
-        if self.shuffle == True:
-            self.sample_list, self.label_list = shuffle(self.sample_list,self.label_list)
+        frame_list, labels = self.sample_list[idx], self.label_list[idx]
+        frames = self._get_frames(frame_list)
+        frames = torch.stack([transforms.functional.to_tensor(frame) for frame in frames])
+        if not self.test_mode and self.transform is not None:
+            frames = self.transform(frames)
+        return frames, labels
 
-def brightness_augment(img, delta): 
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV) #convert to hsv
-    hsv = np.array(hsv, dtype=np.float32)
-    hsv[:, :, 2] = hsv[:, :, 2] * (1+delta) #scale channel V uniformly
-    hsv[:, :, 2][hsv[:, :, 2] > 255] = 255.0 #reset out of range values
-    bgr = cv2.cvtColor(np.array(hsv, dtype=np.uint8), cv2.COLOR_HSV2BGR)
-    return bgr
+    def _get_frames(self, frame_list):
+        frames = []
+        for frame_loc in frame_list:
+            frames.append(Image.open(frame_loc).convert('RGB'))
+        return frames
+
+    def _get_data_list(self, video_list, seq_len, stride, model_type):
+        for video in video_list:
+            frame_locs = []
+            frame_labels = []
+            f = open(self.root_path + video + "/gt_frame_3labels.txt","r")
+            gt_frame = [str.split(line, "\t") for line in f.readlines()]
+            for frame_info in gt_frame:
+                frame_locs.append(self.root_path + video + "/" + frame_info[0])
+                cur_label_idx = LABEL_TABLE[str.split(frame_info[1], "\n")[0]]
+                frame_labels.append(cur_label_idx)
+            for i in range(0, len(frame_locs)-seq_len, stride):
+                self.sample_list.append(frame_locs[i:i+seq_len])
+                if model_type == 1:
+                    self.label_list.append(np.array(frame_labels[i:i+seq_len]))
+                elif model_type == 2:
+                    self.label_list.append(np.array(frame_labels[i+seq_len-1]))
+        self.label_list = np.array(self.label_list)
+        self.sample_list = np.array(self.sample_list)
+def denormalize(video_tensor):
+    """
+    Undoes mean/standard deviation normalization, zero to one scaling,
+    and channel rearrangement for a batch of images.
+    """
+    inverse_normalize = transforms.Normalize(
+            mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
+            std=[1 / 0.229, 1 / 0.224, 1 / 0.225]
+    )
+    return (inverse_normalize(video_tensor) * 255.).type(torch.uint8).permute(0, 2, 3, 1).numpy()
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
             
 def test_model(model, videos_test, test_loc, seq_len, model_type,test_stride=1):
     # test_stride is used for model_type 1

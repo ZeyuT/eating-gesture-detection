@@ -1,123 +1,66 @@
-import tensorflow as tf
-from tensorflow.keras.layers import LeakyReLU,Conv2D,Activation,MaxPooling2D,concatenate,ConvLSTM2D,BatchNormalization,LSTM,GRU,TimeDistributed
-from tensorflow.keras.layers import Input,Conv3D,MaxPooling3D,Flatten,Dense,Dropout
-from tensorflow.keras import Model,initializers, regularizers
+import torch
+import torchvision
+import torch.nn as nn
 from constants import LABEL_NUM
-def Conv3D_Block(input_tensor, out_channels):
-    # first layer
-    x = Conv3D(filters=out_channels, kernel_size=[3,3,3], padding="same",
-                kernel_initializer="he_normal",bias_initializer="zeros")(input_tensor)
-    x = BatchNormalization()(x)
-    x = LeakyReLU()(x)
-    #x = MaxPooling3D(pool_size=[2,2,2], strides=[2, 2, 2], padding="same")(x)
+
+class TimeDistributed(nn.Module):
+    def __init__(self, module, batch_first=True):
+        super(TimeDistributed, self).__init__()
+        self.module = module
+        self.batch_first = batch_first
+    def forward(self, x):
+        batch_size, time_steps, C, H, W = x.size()
+        input = x.view(batch_size * time_steps, C, H, W)
+        output = self.module(input)
+        output = output.view(batch_size, time_steps, -1)
+        if self.batch_first is False:
+            output = output.permute(1, 0, 2)
+        return output
+
     
-    # second layer
-    x = Conv3D(filters=out_channels, kernel_size=[3,3,3], padding="same",
-                kernel_initializer="he_normal",bias_initializer="zeros")(x)
-    x = BatchNormalization()(x)
-    x = LeakyReLU()(x)
-    x = MaxPooling3D(pool_size=[2,2,2], strides=[2, 2, 2], padding="same")(x)
-    return x
+class Spatial_Encoder(nn.Module):
+    def __init__(self,basemodel='resnet34'):
+        super(Spatial_Encoder, self).__init__()
+        self._prepare_basemodel(basemodel)
+    def forward(self, x):
+        batch_size, time_steps, C, H, W = x.size()
+        x = x.view(batch_size * time_steps, C, H, W)
+        x = self.net(x)
+        new_C, new_H, new_W = x.size()[-3:]
+        output = x.view(batch_size, time_steps, new_C, new_H, new_W)
+        return output
+    def _prepare_basemodel(self,basemodel):
+        if basemodel == "resnet34":
+            model = torchvision.models.resnet34(pretrained=True)
+        if basemodel == "resnet50":
+            model = torchvision.models.resnet50(pretrained=True)
+        module_list = list(model.children())
+        del module_list[-1]
+        self.net = nn.Sequential(*module_list)
         
-def TimeDistributed_Conv2D_Block(input_tensor, out_channels):
-    # first layer
-    x = TimeDistributed(Conv2D(filters=out_channels, kernel_size=[3,3], padding="same",
-                        kernel_initializer="he_normal",
-                        bias_initializer="zeros"))(input_tensor)
-    x = TimeDistributed(BatchNormalization())(x)
-    x = TimeDistributed(LeakyReLU())(x)
-    #x = TimeDistributed(MaxPooling2D(pool_size=[2,2], strides=[2,2], padding="same"))(x)
-    
-    # second layer
-    x = TimeDistributed(Conv2D(filters=out_channels, kernel_size=[3,3], padding="same",
-                        kernel_initializer="he_normal",
-                        bias_initializer="zeros"))(x)
-    x = TimeDistributed(BatchNormalization())(x)
-    x = TimeDistributed(LeakyReLU())(x)
-    x = TimeDistributed(MaxPooling2D(pool_size=[2,2], strides=[2,2], padding="same"))(x)   
-    return x
-    
-def CNN3D_Model(input_tensor,n_filters=16):
-    x = Conv3D_Block(input_tensor,n_filters)
-    x = Conv3D_Block(x,n_filters)
-    x = Conv3D_Block(x,n_filters*2)
-    x = Conv3D_Block(x,n_filters*2)
-    x = Conv3D_Block(x,n_filters*4)
-    
-    x = Flatten()(x)
-    x = Dense(128)(x)
-    x = LeakyReLU()(x)
-    x = BatchNormalization()(x)
-    x = Dropout(0.3)(x)
-    x = Dense(LABEL_NUM)(x)
-    
-    outputs = Activation("softmax")(x)
-    model = Model(inputs=[input_tensor], outputs=[outputs], name="CNN-3D")
-    return model
-
-         
-def CNNLSTM_Model(input_tensor,n_filters=16):        
-    x = TimeDistributed_Conv2D_Block(input_tensor,n_filters)
-    x = TimeDistributed_Conv2D_Block(x,n_filters)
-    x = TimeDistributed_Conv2D_Block(x,n_filters*2)
-    x = TimeDistributed_Conv2D_Block(x,n_filters*2)
-    x = TimeDistributed_Conv2D_Block(x,n_filters*4)   
-
-    x = TimeDistributed(Flatten())(x)
-
-    x = TimeDistributed(Dense(128))(x)
-    x = TimeDistributed(LeakyReLU())(x)
-    x = BatchNormalization()(x)
-    x = TimeDistributed(Dropout(0.3))(x)
-    
-    x = LSTM(units = 64,
-            kernel_initializer='he_normal', bias_initializer='zeros',
-            return_sequences=True)(x)
-    x = BatchNormalization()(x)         
-    x = LSTM(units = 64, 
-            kernel_initializer='he_normal', bias_initializer='zeros',
-            return_sequences=True)(x)
-    x = BatchNormalization()(x)         
-    x = LSTM(units = 32, 
-            kernel_initializer='he_normal', bias_initializer='zeros',
-            return_sequences=True)(x) 
-    x = BatchNormalization()(x)     
-    x = TimeDistributed(Dense(LABEL_NUM))(x)
-    #x = Dense(LABEL_NUM)(x)
-    outputs = Activation("softmax")(x)
-    model = Model(inputs=[input_tensor], outputs=[outputs], name="CNN-LSTM")
-    return model
-    
-    
-def build_spatial_encoder():
-    resnet = tf.keras.applications.ResNet50V2(
-            include_top=False,
-            weights="imagenet",
-            pooling="avg")
-    for layer in resnet.layers:
-        layer.trainable = False
-    input_tensor = Input((224,224,3), name="frame")
-    outputs = resnet(input_tensor)
-    model = Model(inputs=[input_tensor], outputs=[outputs], name="resnet50v2")
-    return model
-
-def RESLSTM_Model(input_tensor):    
-    spatial_encoder = build_spatial_encoder()
-    x = TimeDistributed(spatial_encoder,name="spatial_encoder")(input_tensor)
-    x = TimeDistributed(Dropout(0.3),name="spatial_dropout")(x)
-    x = LSTM(units = 64,
-            kernel_initializer='he_normal', bias_initializer='zeros',
-            return_sequences=True, name="lstm_1")(x)
-    x = BatchNormalization()(x)         
-    x = LSTM(units = 64, 
-            kernel_initializer='he_normal', bias_initializer='zeros',
-            return_sequences=True, name="lstm_2")(x)
-    x = BatchNormalization()(x)         
-    x = LSTM(units = 32, 
-            kernel_initializer='he_normal', bias_initializer='zeros',
-            return_sequences=True, name="lstm_3")(x) 
-    x = BatchNormalization()(x)     
-    x = TimeDistributed(Dense(LABEL_NUM))(x)
-    outputs = Activation("softmax")(x)
-    model = Model(inputs=[input_tensor], outputs=[outputs], name="resnet_LSTM")
-    return model
+class RES_LSTM(nn.Module):
+    def __init__(self,seq_len=16,basemodel='resnet34'):
+        super(RES_LSTM, self).__init__()
+        self.encoder = Spatial_Encoder(basemodel)
+        if basemodel=='resnet34':
+            encoder_size = 512
+        if basemodel=='resnet50':
+            encoder_size = 2048
+        self.lstm = nn.LSTM(input_size=encoder_size,
+                            hidden_size=128,
+                            num_layers=2,
+                            batch_first=True)
+        self.batch_norm = nn.BatchNorm1d(num_features=seq_len)
+        self.flatten = nn.Flatten(start_dim=2,end_dim=-1)
+        self.fc = nn.Sequential(nn.Linear(128, LABEL_NUM),
+                                nn.ReLU())
+        self.act = nn.Softmax(dim=-1)
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.flatten(x)
+        x = self.batch_norm(x)
+        self.lstm.flatten_parameters() 
+        x,(hn, cn) = self.lstm(x)
+        x = self.fc(x)
+        output = self.act(x)
+        return output
