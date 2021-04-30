@@ -9,47 +9,41 @@ from PIL import Image
 from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM, LABEL_TABLE
 
 def class_weights(label_list, weight_type):
+    """
+    version 1: uniform weights
+    version 2: 1/(1+LABEL_NUM*c(i)/n)
+    version 3: a/c(i) (Inverse Number of Sample)
+    version 4: a/c(i)**0.5 (Inverse of Square Root of Number of Samples)
+    version 5: (1-beta) / (1-beta**c(i)) (Effective Number of Samples)
+    https://medium.com/gumgum-tech/handling-class-imbalance-by-introducing-sample-weighting-in-the-loss-function-3bdebd8203b4
+    All weights are normalized.
+    Where n is the total pattern numeber. a=10000 is a constant to avoid super small number.
+    """
     class_counts = []
     for label in range(LABEL_NUM):
         class_counts.append(np.sum(label_list==label))
     class_counts = np.array(class_counts)
     total = np.sum(class_counts)
-    ret = []
+    weights = []
+    a = 10000
     for i in range(LABEL_NUM):
         if class_counts[i] == 0:
-            ret.append(0)
+            weights.append(0)
         else:
-            if weight_type == 1:
-                """
-                version 1: n/(m*c(i))
-                where n: total sample number, m: number of classes. c(i): number of samples belonging to the class
-                """
-                ret.append(total/(class_counts[i] * LABEL_NUM) / np.sum(total/(class_counts[class_counts!=0] * LABEL_NUM)))
+            if weight_type == 1:    
+                weights.append(1/LABEL_NUM)
             elif weight_type == 2:
-                """
-                version 2: 1/(1+c(i)/n)
-                """
-                ret.append(1/(1+LABEL_NUM*class_counts[i]/total) / np.sum(1/(1+LABEL_NUM*class_counts[class_counts!=0]/total)))
+                weights.append(1/(1+LABEL_NUM*class_counts[i]/total))
             elif weight_type == 3:
-                """
-                version 3: 1/c(i) / sum(1/c(i)) (Inverse Number of Sample)
-                """
-                ret.append(1/class_counts[i] / np.sum(1/class_counts[class_counts!=0]))
+                weights.append(a/class_counts[i])
             elif weight_type == 4:
-                """
-                version 4: 1/c(i)**0.5 (Inverse of Square Root of Number of Samples)
-                """
-                ret.append(1/class_counts[i]**0.5 / np.sum(1/class_counts[class_counts!=0]**0.5))
+                weights.append(a/class_counts[i]**0.5)
             elif weight_type == 5:
-                """
-                version 5: (1-beta) / (1-beta**c(i)) (Effective Number of Samples)
-                https://medium.com/gumgum-tech/handling-class-imbalance-by-introducing-sample-weighting-in-the-loss-function-3bdebd8203b4
-                """
                 beta = 0.99999
-                ret.append((1-beta)/(1-beta**class_counts[i])/ np.sum((1-beta)/(1-beta**class_counts[class_counts!=0])))
-            else:
-                ret.append(1/LABEL_NUM)
-    return np.array(ret)
+                weights.append(a*(1-beta)/(1-beta**class_counts[i]))
+    weights = np.array(weights) 
+    weights = weights/np.sum(weights)
+    return weights, class_counts
             
 class FrameSequenceDataset(data.Dataset):
     def __init__(self,root_path,video_list,seq_len,stride,model_type,transform,test_mode=False):
@@ -84,10 +78,10 @@ class FrameSequenceDataset(data.Dataset):
         for video in video_list:
             frame_locs = []
             frame_labels = []
-            f = open(self.root_path + video + "/gt_frame_3labels.txt","r")
+            f = open(os.path.join(self.root_path,video,"gt_frame_3labels.txt"),"r")
             gt_frame = [str.split(line, "\t") for line in f.readlines()]
             for frame_info in gt_frame:
-                frame_locs.append(self.root_path + video + "/" + frame_info[0])
+                frame_locs.append(os.path.join(self.root_path,video,frame_info[0]))
                 cur_label_idx = LABEL_TABLE[str.split(frame_info[1], "\n")[0]]
                 frame_labels.append(cur_label_idx)
             for i in range(0, len(frame_locs)-seq_len, stride):
@@ -98,6 +92,7 @@ class FrameSequenceDataset(data.Dataset):
                     self.label_list.append(np.array(frame_labels[i+seq_len-1]))
         self.label_list = np.array(self.label_list)
         self.sample_list = np.array(self.sample_list)
+        
 def denormalize(video_tensor):
     """
     Undoes mean/standard deviation normalization, zero to one scaling,
@@ -128,6 +123,21 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
             
 def test_model(model, videos_test, test_loc, seq_len, model_type,test_stride=1):
+
+    preprocess = transforms.Compose([
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ])
+                
+    test_set = FrameSequenceDataset(
+            root_path=FRAME_LOC+"test_set/",
+            video_list=test_video_list,
+            seq_len=seq_len,
+            stride=stride,
+            model_type=model_type,
+            transform=None,
+            test_mode=False
+            )
+        
     # test_stride is used for model_type 1
     test_batch = 1024
     f_matrices = open(test_loc + "/matrices.txt",'w')
@@ -146,13 +156,9 @@ def test_model(model, videos_test, test_loc, seq_len, model_type,test_stride=1):
         gt_frame = [str.split(line, "\t") for line in f.readlines()]
         for frame_info in gt_frame:
             frame_name.append(frame_info[0])
-            cur_img = cv2.imread(FRAME_LOC + video + "/" + frame_info[0], cv2.IMREAD_UNCHANGED)
-            
-            #gray_img = cv2.cvtColor(cur_img, cv2.COLOR_BGR2GRAY)
-            #gray_img = np.expand_dims(gray_img, axis=-1)
-            #cur_img = np.concatenate([gray_img,gray_img,gray_img],axis=-1)
-            
+            cur_img = Image.open(FRAME_LOC + video + "/" + frame_info[0])
             cur_img = cur_img / 255.0 
+            cur_img = transforms.functional.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(cur_img)
             frames.append(cur_img)
             #cur_labelIdx = int(frame_info[1])
             cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])

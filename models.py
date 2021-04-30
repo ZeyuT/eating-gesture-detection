@@ -52,6 +52,7 @@ class RES_LSTM(nn.Module):
                             batch_first=True)
         self.batch_norm = nn.BatchNorm1d(num_features=seq_len)
         self.flatten = nn.Flatten(start_dim=2,end_dim=-1)
+        self.dropout = nn.Dropout(p=0.3)
         self.fc = nn.Sequential(nn.Linear(128, LABEL_NUM),
                                 nn.ReLU())
         self.act = nn.Softmax(dim=-1)
@@ -59,8 +60,9 @@ class RES_LSTM(nn.Module):
         x = self.encoder(x)
         x = self.flatten(x)
         x = self.batch_norm(x)
-        self.lstm.flatten_parameters() 
-        x,(hn, cn) = self.lstm(x)
+        self.lstm.flatten_parameters()
+        x,_ = self.lstm(x)
+        x = self.dropout(x)
         x = self.fc(x)
         output = self.act(x)
         return output

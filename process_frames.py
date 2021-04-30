@@ -10,7 +10,7 @@ RAW_DATA_LOC = "/home/zeyut/eat_detection/CafeteriaData/"
 
 PRE_INTAKE_DURATION = 500 # in ms
 AFTER_INTAKE_DURATION = 8000 # in ms
-
+MAX_VIDEO = 300
 
     
 def process_frames(args): 
@@ -255,14 +255,39 @@ if __name__ == "__main__":
                                     fps])
 
         video_num += 1
-        if video_num >= 300:
+        if video_num >= MAX_VIDEO:
    			   break
 
     # load video file
-    pool = mp.Pool(40)
-    ret = pool.map(process_frames,process_frames_args)
-    pool.close()  
-    pool.join()                            
+    #pool = mp.Pool(40)
+    #ret = pool.map(process_frames,process_frames_args)
+    #pool.close()  
+    #pool.join()                            
 
-
-    
+    video_list = [f for f in os.listdir(FRAME_LOC) if f.startswith("p")]
+    video_list.sort(reverse=False)
+    random_idxs = np.random.permutation(MAX_VIDEO)
+    """
+    Split training, validataion, testing set, with ratio being 0.7:0.15:0.15
+    """
+    try:
+        os.mkdir(FRAME_LOC+"train_set")
+    except:
+        pass
+    try:
+        os.mkdir(FRAME_LOC+"val_set")
+    except:
+        pass
+    try:
+        os.mkdir(FRAME_LOC+"test_set")
+    except:
+        pass
+    for idx in random_idxs[0:int(0.7*MAX_VIDEO)]:
+        query = "mv {} {}".format(FRAME_LOC+video_list[idx],FRAME_LOC+"train_set")
+        response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
+    for idx in random_idxs[int(0.7*MAX_VIDEO):int(0.85*MAX_VIDEO)]:
+        query = "mv {} {}".format(FRAME_LOC+video_list[idx],FRAME_LOC+"val_set")
+        response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
+    for idx in random_idxs[int(0.85*MAX_VIDEO):]:
+        query = "mv {} {}".format(FRAME_LOC+video_list[idx],FRAME_LOC+"test_set")
+        response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()        
