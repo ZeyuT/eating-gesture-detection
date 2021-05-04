@@ -13,5 +13,4 @@ tqdm \
 multiprocess==0.70.11.1
 <i> Note: some dependencies may not be used for now, but are reserved for possible future purpose </i>
 
-Dependencies installing pipeline: [ins_env_torch.sh](https://github.com/ZeyuT/eating-gesture-detection/blob/intake_detection_torch
-/ins_env_torch.sh)
+Dependencies installing pipeline: [ins_env_torch.sh](https://github.com/ZeyuT/eating-gesture-detection/blob/intake_detection_torch/ins_env_torch.sh)
