@@ -17,6 +17,9 @@ def process_frames(args):
     window_loc,raw_frame_loc,frame_save_loc,gt_path,video_sync_offset,fps = \
     args[0],args[1],args[2],args[3],args[4],args[5]  
 
+    if not os.path.exists(frame_save_loc):
+        os.makedirs(frame_save_loc)
+            
     gesture_gt_loc = gt_path + '/gesture_union.txt'
     intake_gt_loc = gt_path + '/gt_union.txt' 
     gesture_starts, gesture_ends, gesture_types = load_gt(gesture_gt_loc,
@@ -137,7 +140,8 @@ def load_gt(gesture_gt_loc,intake_gt_loc,video_sync_offset):
             if cur_start > pre_end + 1:
                 unlabel_start = pre_end + 1
                 unlabel_end = cur_start - 1
-                # check if any drinking/eating gesture using non-dominant hand exists in rest/other gestures            
+                # check if any drinking/eating gesture using non-dominant hand exists in rest/other gestures   
+                # firstly, find the nearest bite&drink event after the unlabel_start          
                 bite_idx = 0
                 drink_idx = 0
                 while (1):
@@ -161,7 +165,8 @@ def load_gt(gesture_gt_loc,intake_gt_loc,video_sync_offset):
                     gesture_types.append("non_intake")	# data labeled as non_intake
                     
         if label in ["rest","other"]:
-            # check if any drinking/eating gesture using non-dominant hand exists in rest/other gestures            
+            # check if any drinking/eating gesture using non-dominant hand exists in rest/other gestures  
+            # firstly, find the nearest bite&drink event after the cur_start                  
             bite_idx = 0
             drink_idx = 0
             while (1):
@@ -197,9 +202,17 @@ def load_gt(gesture_gt_loc,intake_gt_loc,video_sync_offset):
     f_gt.close();
     return gesture_starts, gesture_ends, gesture_types
 
-                                   
+def move_subject_videos(subject_name, target_loc):        
+    for video_name in [f for f in os.listdir(FRAME_LOC) if f.startswith(subject_name)]:
+        move_video(FRAME_LOC+video_name, target_loc)
+
+def move_video(source_loc,target_loc):
+    query = "mv {} {}".format(source_loc,target_loc)
+    response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
+                                           
 if __name__ == "__main__": 
     fps = int(sys.argv[1])
+    subject_independent = int(sys.argv[2])
     try:
         os.mkdir(FRAME_LOC)
     except:
@@ -238,8 +251,6 @@ if __name__ == "__main__":
         frame_save_loc = FRAME_LOC + "_".join(str.split(file_loc,"/")[0:-1]) + "/"
         if not os.path.exists(raw_frame_loc):
             continue
-        if not os.path.exists(frame_save_loc):
-            os.makedirs(frame_save_loc)
             
         window_loc = []
         for line in windowlists:
@@ -259,14 +270,16 @@ if __name__ == "__main__":
    			   break
 
     # load video file
-    #pool = mp.Pool(40)
-    #ret = pool.map(process_frames,process_frames_args)
-    #pool.close()  
-    #pool.join()                            
+    pool = mp.Pool(40)
+    ret = pool.map(process_frames,process_frames_args)
+    pool.close()  
+    pool.join()                            
 
     video_list = [f for f in os.listdir(FRAME_LOC) if f.startswith("p")]
     video_list.sort(reverse=False)
-    random_idxs = np.random.permutation(MAX_VIDEO)
+    subject_list = np.array([str.split(video,"_")[0] for video in video_list])
+    subject_set = sorted(np.unique(subject_list),reverse=False)
+    subject_num = len(subject_set)
     """
     Split training, validataion, testing set, with ratio being 0.7:0.15:0.15
     """
@@ -282,12 +295,20 @@ if __name__ == "__main__":
         os.mkdir(FRAME_LOC+"test_set")
     except:
         pass
-    for idx in random_idxs[0:int(0.7*MAX_VIDEO)]:
-        query = "mv {} {}".format(FRAME_LOC+video_list[idx],FRAME_LOC+"train_set")
-        response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
-    for idx in random_idxs[int(0.7*MAX_VIDEO):int(0.85*MAX_VIDEO)]:
-        query = "mv {} {}".format(FRAME_LOC+video_list[idx],FRAME_LOC+"val_set")
-        response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
-    for idx in random_idxs[int(0.85*MAX_VIDEO):]:
-        query = "mv {} {}".format(FRAME_LOC+video_list[idx],FRAME_LOC+"test_set")
-        response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()        
+
+    if subject_independent:
+        random_idxs = np.random.permutation(subject_num)
+        for idx in random_idxs[0:int(0.7*subject_num)]:
+            move_subject_videos(subject_set[idx], FRAME_LOC+"train_set")
+        for idx in random_idxs[int(0.7*subject_num):int(0.85*subject_num)]:
+            move_subject_videos(subject_set[idx], FRAME_LOC+"val_set")        
+        for idx in random_idxs[int(0.85*subject_num):]:
+            move_subject_videos(subject_set[idx], FRAME_LOC+"test_set")                             
+    else:  
+        random_idxs = np.random.permutation(MAX_VIDEO)        
+        for idx in random_idxs[0:int(0.7*MAX_VIDEO)]:
+            move_video(FRAME_LOC+video_list[idx], FRAME_LOC+"train_set")
+        for idx in random_idxs[int(0.7*MAX_VIDEO):int(0.85*MAX_VIDEO)]:
+            move_video(FRAME_LOC+video_list[idx], FRAME_LOC+"val_set")
+        for idx in random_idxs[int(0.85*MAX_VIDEO):]:
+            move_video(FRAME_LOC+video_list[idx], FRAME_LOC+"test_set")  
