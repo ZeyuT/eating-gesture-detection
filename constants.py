@@ -1,5 +1,7 @@
 RAW_FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_rawFrames/"  
-FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_torch_224/"  
+FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_independent/"  
+#FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_dependent/"  
+RESULT_LOC = "/scratch1/zeyut/eat_detection/"
 WIDTH = 224
 HEIGHT = 224
 CHANNEL = 3

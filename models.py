@@ -50,11 +50,25 @@ class RES_LSTM(nn.Module):
                             hidden_size=128,
                             num_layers=2,
                             batch_first=True)
+        for name, param in self.lstm.named_parameters():
+            if 'bias' in name:
+                 nn.init.constant_(param, 0.0)
+            elif 'weight_ih' in name:
+                 nn.init.kaiming_normal_(param)
+            elif 'weight_hh' in name:
+                 nn.init.orthogonal_(param)
+                 
         self.batch_norm = nn.BatchNorm1d(num_features=seq_len)
         self.flatten = nn.Flatten(start_dim=2,end_dim=-1)
-        self.dropout = nn.Dropout(p=0.3)
+        self.dropout = nn.Dropout(p=0.5)
         self.fc = nn.Sequential(nn.Linear(128, LABEL_NUM),
-                                nn.ReLU())
+                                nn.ReLU())                                
+        for name, param in self.fc.named_parameters():
+            if 'weight' in name:
+                nn.init.kaiming_normal_(param)
+            elif 'bias' in name:
+                nn.init.constant_(param, 0.0)   
+        
         self.act = nn.Softmax(dim=-1)
     def forward(self, x):
         x = self.encoder(x)
@@ -66,3 +80,4 @@ class RES_LSTM(nn.Module):
         x = self.fc(x)
         output = self.act(x)
         return output
+        

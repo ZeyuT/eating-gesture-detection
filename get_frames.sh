@@ -1,6 +1,6 @@
 #/bin/bash
 #PBS -N zeyut
-#PBS -l select=1:ncpus=40:mem=100gb:interconnect=any
+#PBS -l select=1:ncpus=20:mem=100gb:interconnect=any
 #PBS -l walltime=72:00:00
 #PBS -e /home/zeyut/eat_detection/workspace/job_output
 #PBS -o /home/zeyut/eat_detection/workspace/job_output
@@ -17,7 +17,7 @@ cd /scratch1/zeyut/eat_detection
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/extract_frames.py /scratch1/zeyut/eat_detection
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/process_frames.py /scratch1/zeyut/eat_detection
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/constants.py /scratch1/zeyut/eat_detection
-python process_frames.py 8
+python process_frames.py 8 1
 
 
   

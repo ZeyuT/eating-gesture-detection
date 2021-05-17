@@ -6,10 +6,12 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from PIL import Image
+from torch.autograd import Variable
 from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM, LABEL_TABLE
-
+from tqdm import tqdm
+import math
 def class_weights(label_list, weight_type):
-    """
+    '''
     version 1: uniform weights
     version 2: 1/(1+LABEL_NUM*c(i)/n)
     version 3: a/c(i) (Inverse Number of Sample)
@@ -18,7 +20,7 @@ def class_weights(label_list, weight_type):
     https://medium.com/gumgum-tech/handling-class-imbalance-by-introducing-sample-weighting-in-the-loss-function-3bdebd8203b4
     All weights are normalized.
     Where n is the total pattern numeber. a=10000 is a constant to avoid super small number.
-    """
+    '''
     class_counts = []
     for label in range(LABEL_NUM):
         class_counts.append(np.sum(label_list==label))
@@ -48,14 +50,12 @@ def class_weights(label_list, weight_type):
 class FrameSequenceDataset(data.Dataset):
     def __init__(self,root_path,video_list,seq_len,stride,model_type,transform,test_mode=False):
         'Initialization'
-        self.root_path = root_path
         self.model_type = model_type
         self.transform = transform
         self.test_mode = test_mode
         self.sample_list = []
         self.label_list = []
-        self.seq_len = seq_len
-        self._get_data_list(video_list, seq_len, stride, model_type)
+        self._get_data_list(root_path, video_list, seq_len, stride, model_type)
         
     def __len__(self):
         return len(self.sample_list)
@@ -74,17 +74,17 @@ class FrameSequenceDataset(data.Dataset):
             frames.append(Image.open(frame_loc).convert('RGB'))
         return frames
 
-    def _get_data_list(self, video_list, seq_len, stride, model_type):
+    def _get_data_list(self, root_path, video_list, seq_len, stride, model_type):
         for video in video_list:
             frame_locs = []
             frame_labels = []
-            f = open(os.path.join(self.root_path,video,"gt_frame_3labels.txt"),"r")
+            f = open(os.path.join(root_path,video,"gt_frame_3labels.txt"),"r")
             gt_frame = [str.split(line, "\t") for line in f.readlines()]
             for frame_info in gt_frame:
-                frame_locs.append(os.path.join(self.root_path,video,frame_info[0]))
+                frame_locs.append(os.path.join(root_path,video,frame_info[0]))
                 cur_label_idx = LABEL_TABLE[str.split(frame_info[1], "\n")[0]]
                 frame_labels.append(cur_label_idx)
-            for i in range(0, len(frame_locs)-seq_len, stride):
+            for i in range(0, len(frame_locs)-seq_len+1, stride):
                 self.sample_list.append(frame_locs[i:i+seq_len])
                 if model_type == 1:
                     self.label_list.append(np.array(frame_labels[i:i+seq_len]))
@@ -92,7 +92,50 @@ class FrameSequenceDataset(data.Dataset):
                     self.label_list.append(np.array(frame_labels[i+seq_len-1]))
         self.label_list = np.array(self.label_list)
         self.sample_list = np.array(self.sample_list)
+
+class testDataset(data.Dataset):
+    def __init__(self,data_path,seq_len,stride,transform):
+        'Initialization'
+        self.data_path = data_path
+        self.seq_len = seq_len
+        self.stride = stride
+        self.transform = transform
+        self.input_list = []
+        self.video_labels = []
+        self.frame_names = []
+        self._get_data_list(data_path,seq_len,stride)   
         
+    def __len__(self):
+        return len(self.input_list)
+    
+    def __getitem__(self, idx):
+        frame_list = self.input_list[idx]
+        frames = self._get_frames(frame_list)
+        frames = torch.stack([transforms.functional.to_tensor(frame) for frame in frames])
+        frames = self.transform(frames)
+        return frames
+    
+    def _get_frames(self, frame_list):
+        frames = []
+        for frame_loc in frame_list:
+            frames.append(Image.open(frame_loc).convert('RGB'))
+        return frames
+    
+    def _get_data_list(self,data_path,seq_len,stride):
+        frame_locs = []
+        f = open(os.path.join(data_path,"gt_frame_3labels.txt"),"r")
+        gt_frame = [str.split(line, "\t") for line in f.readlines()]
+        sys.stdout.flush()
+        for frame_info in gt_frame:
+            self.frame_names.append(frame_info[0])
+            frame_locs.append(os.path.join(data_path,frame_info[0]))
+            cur_label_idx = LABEL_TABLE[str.split(frame_info[1], "\n")[0]]
+            self.video_labels.append(cur_label_idx)
+        for i in range(0, len(frame_locs)-seq_len+1, stride):
+            self.input_list.append(frame_locs[i:i+seq_len])
+        self.video_labels = np.array(self.video_labels)       
+        self.frame_names = np.array(self.frame_names) 
+            
 def denormalize(video_tensor):
     """
     Undoes mean/standard deviation normalization, zero to one scaling,
@@ -121,132 +164,144 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-            
-def test_model(model, videos_test, test_loc, seq_len, model_type,test_stride=1):
 
+class RateMeter(object):
+    """Computes and stores the average rate (acc, TPR, etc)"""
+    def __init__(self):
+        self.reset()
+    def reset(self):
+        self.correctCount = 0
+        self.totalCount = 0
+        self.rate = 0
+    def update(self, correct, total):
+        self.correctCount += correct
+        self.totalCount += total
+        if self.totalCount:
+            self.rate = self.correctCount / self.totalCount
+        else:
+            self.rate = 0
+            
+def test_model(model, 
+              test_video_list,
+              root_path,
+              test_save_loc, 
+              seq_len, 
+              model_type,
+              test_batch_size=1000,
+              test_stride=1):
+    model.eval()
     preprocess = transforms.Compose([
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                 ])
                 
-    test_set = FrameSequenceDataset(
-            root_path=FRAME_LOC+"test_set/",
-            video_list=test_video_list,
-            seq_len=seq_len,
-            stride=stride,
-            model_type=model_type,
-            transform=None,
-            test_mode=False
-            )
-        
-    # test_stride is used for model_type 1
-    test_batch = 1024
-    f_matrices = open(test_loc + "/matrices.txt",'w')
-    print("{} videos in testing set".format(len(videos_test)))
-    print("testing batch size: {}\n".format(test_batch))
-    total_True = 0
-    total_pred = 0
-    total_nonintake = 0
-    sample_num = 0
-    for video in videos_test:
-        frames = []
-        frame_labels = []
-        frame_name = []
-        f = open(FRAME_LOC + video + "/gt_frame_3labels.txt","r")
-        #f = open("/home/zeyut/eat_detection/workspace/eating-gesture-detection/VideoData/p176_c1/gt_frame_3labels.txt","r")
-        gt_frame = [str.split(line, "\t") for line in f.readlines()]
-        for frame_info in gt_frame:
-            frame_name.append(frame_info[0])
-            cur_img = Image.open(FRAME_LOC + video + "/" + frame_info[0])
-            cur_img = cur_img / 255.0 
-            cur_img = transforms.functional.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(cur_img)
-            frames.append(cur_img)
-            #cur_labelIdx = int(frame_info[1])
-            cur_labelIdx = numeralize_labels(str.split(frame_info[1], "\n")[0])
-            frame_labels.append(cur_labelIdx)
-        frame_labels = np.array(frame_labels)
-        pred = []
-        probs = []
-        x_test = []
-        if model_type == 1:
-            for i in range(0, len(frames)-seq_len, test_stride):
-                x_test.append(frames[i:i+seq_len])
-                'Make predictions with batch size being test_batch'
-                if len(x_test) >= test_batch:
-                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
-                    cur_pred = np.squeeze(model.predict(x_test))
-                    pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
-                    probs.append(cur_pred)
-                    sample_num += len(x_test)
-                    x_test = []
-            if len(x_test) > 0:
-                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
-                    cur_pred = np.squeeze(model.predict(x_test))
-                    pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
-                    probs.append(cur_pred)
-                    sample_num += len(x_test)
-                    
-            pred = np.concatenate(pred, axis=0)
-            probs = np.concatenate(probs, axis=0)
-            print("len:{}".format(len(probs)))
-            'build prediction heat map'
-            pred_heat = np.zeros((len(frame_labels),LABEL_NUM))
-            for i in range(len(pred)):
-                for j in range(len(pred[i])):
-                    pred_heat[test_stride*i+j][pred[i][j]] += 1
-            'get frame wise predictions with max vote strategy'
-            frame_pred = np.argmax(pred_heat, axis=-1)
-         
-        elif model_type == 2 or model_type == 3:
-            pred = []
-            for i in range(0, len(frames)-seq_len):
-                x_test.append(frames[i:i+seq_len])
-                'Make predictions with batch size being test_batch'
-                if len(x_test) >= test_batch:
-                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
-                    cur_pred = np.squeeze(model.predict(x_test))
-                    pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
-                    sample_num += len(x_test)
-                    x_test = []
-            if len(x_test) > 0:
-                    x_test = np.reshape(x_test,(-1,seq_len,HEIGHT,WIDTH,CHANNEL))
-                    cur_pred = np.squeeze(model.predict(x_test))
-                    pred.append(np.argmax(cur_pred, axis=-1).astype("int"))
-                    sample_num += len(x_test)
-            pred = np.concatenate(pred, axis=0)
-            frame_pred = np.zeros(len(frames))
-            frame_pred[seq_len-1:seq_len-1+len(pred)] = pred
-        
-        """ for visualization"""
-        f_probs = open(test_loc + "/probs_{}.txt".format(video),'w')
-        for name, win_prob in zip(frame_name,probs):
-            #print(name)
+    f_matrices = open(test_save_loc + "/matrices.txt",'w')
+
+    print ("=======================Test Settings===============================")
+    f_matrices.write("=======================Test Settings===============================\n")  
+    message = f"{len(test_video_list)} videos in testing set\n"\
+              f"testing batch size: {test_batch_size}\n"\
+              f"test stride: {test_stride}"
+    print(message)
+    f_matrices.write(message+'\n')
+    print ('===================================================================\n')
+    f_matrices.write('===================================================================\n')
+    f_matrices.flush()
+    sys.stdout.flush()
+    
+    acc = RateMeter()
+    tpr = [RateMeter() for _ in range(LABEL_NUM)]
+    nonintake = RateMeter()
+    for video_name in test_video_list:
+        test_set = testDataset(
+                    data_path=os.path.join(root_path,video_name),
+                    seq_len=seq_len,
+                    stride=test_stride,
+                    transform=preprocess
+                    )
+        test_loader = data.DataLoader(
+                            dataset=test_set,
+                            batch_size=test_batch_size,
+                            shuffle=False,
+                            num_workers=10,
+                            pin_memory=True
+                            )   
+        video_labels = test_set.video_labels
+        frame_names = test_set.frame_names
+        pred_list = []
+        prob_list = [] 
+        '''
+        model_type=1: seq2seq prediction
+        get frame wise predictions using max vote strategy
+        model_type=2: seq2one prediction
+        model directly outputs final frame-wise prediction
+        '''    
+        with tqdm(test_loader,unit= "batch") as tbatch:
+            tbatch.set_description(f"video {video_name}")
+            with torch.no_grad():
+                for input in tbatch:
+                    input = Variable(input).cuda()
+                    output = model(input)
+                    cur_prob = output.detach().cpu()
+                    cur_prob = cur_prob.numpy()
+                    pred_list.append(cur_prob.argmax(-1))
+                    prob_list.append(cur_prob)              
+        pred_list = np.concatenate(pred_list, axis=0)
+        prob_list = np.concatenate(prob_list, axis=0)
+        print('\n')
+        if model_type == 1:   
+            # build a heat map
+            heat_map = np.zeros((len(video_labels),LABEL_NUM))
+            for seq_idx in range(len(pred_list)):
+                for frame_idx in range(len(pred_list[seq_idx])):
+                    heat_map[test_stride*seq_idx+frame_idx][pred_list[seq_idx][frame_idx]] += 1
+            video_preds = np.argmax(heat_map, axis=-1)
+        elif model_type == 2:
+            video_preds = np.zeros(len(video_labels))
+            video_preds[seq_len-1:seq_len-1+len(pred_list)] = pred_list       
+        '''  
+        Save the raw prediction probabililties for visualization
+        ''' 
+        f_probs = open(test_save_loc + "/probs_{}.txt".format(video_name),'w')
+        for name, window_prob in zip(frame_names,prob_list):
+            #saved frame's indexes start from 0
             frame_idx = int(name[6:-4])-1
             f_probs.write("{}".format(frame_idx))
-            for num in win_prob.flatten():
-                f_probs.write("\t{0:.6f}".format(num))
+            for prob_value in window_prob.flatten():
+                f_probs.write("\t{0:.6f}".format(prob_value))
             f_probs.write("\n")
         f_probs.close()
-        f_results = open(test_loc + "/pred_{}.txt".format(video),'w')
-        f_results.write("\n".join(["{}\t{}\t{}".format(i,j,int(k)) for i,j,k in (zip(frame_name,frame_labels,frame_pred))]))
+        f_results = open(test_save_loc + "/pred_{}.txt".format(video_name),'w')
+        f_results.write("\n".join(["{}\t{}\t{}".format(i,j,int(k)) for i,j,k in (zip(frame_names,video_labels,video_preds))]))
         f_results.close()   
-        cur_True = np.sum(frame_pred == frame_labels)
-        total_True += cur_True
-        total_pred += len(frame_pred)
-        cur_nonintake = np.sum(frame_labels == 2)
-        total_nonintake += cur_nonintake
-        f_matrices.write("video name: {}  non_intake percentage: {}\n".format(video, cur_nonintake/len(frame_pred)))
-        print("video name: {}  non_intake percentage: {}\n".format(video, cur_nonintake/len(frame_pred))) 
-        f_matrices.write("acc: {}\n".format(cur_True/len(frame_pred)))
-        
-    f_matrices.write('summary\n')
-    print('summary')
-    f_matrices.write('acc: {0:.6f}\n'.format(total_True/total_pred))
-    print('acc: {0:.6f}\n'.format(total_True/total_pred))
-    f_matrices.write("{} videos in testing set\n".format(len(videos_test)))
-    print("{} videos in testing set".format(len(videos_test)))
-    f_matrices.write("{} samples in testing set\n".format(sample_num))
-    print("{} samples in testing set".format(sample_num))
-    f_matrices.write("non_intake percentage: {}\n".format(total_nonintake/total_pred))
-    print("non_intake percentage: {}\n".format(total_nonintake/total_pred)) 
+        cur_correct = np.sum(video_preds == video_labels)
+        cur_acc = cur_correct/len(video_labels)
+        acc.update(cur_correct,len(video_labels))
+        cur_nonintake = np.sum(video_labels == 2)
+        nonintake.update(cur_nonintake, len(video_labels))
+        cur_uar = 0.0
+        for label in range(LABEL_NUM):
+            cur_tp = np.logical_and(video_preds == video_labels, video_labels==label).sum()
+            cur_p = (video_labels == label).sum().item()
+            if cur_p!=0:
+                cur_uar += cur_tp/cur_p
+            tpr[label].update(cur_tp,cur_p) 
+        cur_uar = cur_uar/3
+        message = f"video {video_name}   " \
+                  f"acc: {(100*cur_acc):>0.2f}%   uar: {(100*cur_uar):>0.2f}%   " \
+                  f"non_intake%: {100*cur_nonintake/len(video_labels):>0.2f}%"
+        f_matrices.write(message+"\n")
+        print(message) 
+        sys.stdout.flush()  
+        f_matrices.flush()
+                          
+    uar = np.sum([tpr[label].rate for label in range(LABEL_NUM)]) / LABEL_NUM
+    message = f"summary\n" \
+              f"acc: {(100*acc.rate):>0.2f}%   uar: {(100*uar):>0.2f}%\n" \
+              f"{len(test_video_list)} videos in testing set\n" \
+              f"{acc.totalCount} samples in testing set\n" \
+              f"non_intake percentage: {100*nonintake.rate:>0.2f}%"
+    print(message)
+    f_matrices.write(message+"\n")
+    sys.stdout.flush()  
+    f_matrices.flush()
     f_matrices.close()
-    f.close()
