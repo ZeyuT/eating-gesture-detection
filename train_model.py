@@ -247,9 +247,9 @@ def main():
     #'''
     print("testing model...")
     if train == 2:
-        root_path = FRAME_LOC+"train_set/"
+        root_path = os.path.join(FRAME_LOC,"train_set/")
     else:
-        root_path = FRAME_LOC+"test_set/"
+        root_path = os.path.join(FRAME_LOC,"test_set/")
     start_time = time.time()
     sys.stdout.flush()
     test_model(model = model, 
