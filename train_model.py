@@ -36,7 +36,6 @@ def main():
         #for debugging
         seq_len = 16
         stride = 8
-        video_num = 1
         batch_size = 16
         epochs = 3
         network = "RES_LSTM"
@@ -47,8 +46,7 @@ def main():
         network = sys.argv[4]
         seq_len = int(sys.argv[5])
         stride = int(sys.argv[6])
-        video_num = int(sys.argv[7])
-        weight_type = int(sys.argv[8])
+        weight_type = int(sys.argv[7])
     if network == "RES_LSTM":
         model_type = 1
     elif network == "CNN3D_Model":
@@ -81,7 +79,16 @@ def main():
         os.mkdir(test_loc)
     except:
         pass
+    try:
+        os.mkdir(os.path.join(test_loc,"frame_probs"))
+    except:
+        pass
 
+    try:
+        os.mkdir(os.path.join(test_loc,"frame_preds"))
+    except:
+        pass      
+        
     print("Preparing dataset...")
     sys.stdout.flush()
     train_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("p")]

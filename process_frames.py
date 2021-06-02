@@ -14,25 +14,29 @@ MAX_VIDEO = 300
 
     
 def process_frames(args): 
-    window_loc,raw_frame_loc,frame_save_loc,gt_path,video_sync_offset,fps = \
+    window_loc,video_frame_loc,frame_save_loc,gt_path,video_sync_offset,fps = \
     args[0],args[1],args[2],args[3],args[4],args[5]  
 
     if not os.path.exists(frame_save_loc):
         os.makedirs(frame_save_loc)
             
-    gesture_gt_loc = gt_path + '/gesture_union.txt'
-    intake_gt_loc = gt_path + '/gt_union.txt' 
+    gesture_gt_loc = os.path.join(gt_path,"gesture_union.txt")
+    intake_gt_loc = os.path.join(gt_path,"gt_union.txt")
     gesture_starts, gesture_ends, gesture_types = load_gt(gesture_gt_loc,
                                                           intake_gt_loc,
                                                           video_sync_offset)
+    # write gesture-wise gt to file. Only write intake gestures' boundaries  
+    f_gt_ges = open(os.path.join(frame_save_loc,"gt_ges_3labels.txt"),"w")
+    f_gt_ges.write("\n".join(["{}\t{}\t{}".format(ges_type,round(start*fps/1000),round(end*fps/1000)) \
+                  for ges_type,start,end in (zip(gesture_types,gesture_starts,gesture_ends)) if ges_type != "non_intake"]))
+    f_gt_ges.close()
     
-    frame_names = [f for f in os.listdir(raw_frame_loc) if f.endswith('.ppm')]
+    frame_names = [f for f in os.listdir(video_frame_loc) if f.endswith('.ppm')]
     frame_names.sort(reverse=False)
-
     timestamp = 0
     gesture_idx = 0
     end_timestamp = gesture_ends[0]
-    f_gt_frame = open(frame_save_loc + "gt_frame_3labels.txt","w")
+    f_gt_frame = open(os.path.join(frame_save_loc,"gt_frame_3labels.txt"),"w")
     #print("--------------------------------------------")
     frameNo = 1
     for frame_name in frame_names:
@@ -45,27 +49,27 @@ def process_frames(args):
             timestamp += int(1 / fps * 1000)
             continue
         
-        # update gesture idx at the current time step
+        # update gesture idx to the current time step
         while timestamp > end_timestamp + int(1 / 15 * 1000 / 2):
             # (1 / 15 * 1000) is the gt's resolution in ms. 
             # "+ int(1 / 15 * 1000 / 2)" lets the current timestamp belong to the closest gesture
             gesture_idx += 1
             end_timestamp = gesture_ends[gesture_idx]
 
-        # write gt gesture to file
+        # write frame-wise gt to file
         #output_name = "frame_{:06d}.ppm".format(frameNo)
         output_name = frame_name[4:]
         f_gt_frame.write(output_name + "\t" + gesture_types[gesture_idx] + "\n")
         
         # crop and resize frames, and replace in place
-        frame = cv2.imread(raw_frame_loc + frame_name, cv2.IMREAD_UNCHANGED)
+        frame = cv2.imread(os.path.join(video_frame_loc,frame_name), cv2.IMREAD_UNCHANGED)
         crop = frame[window_loc[1]:window_loc[3],window_loc[0]:window_loc[2],:]
         crop = cv2.resize(crop,(WIDTH,HEIGHT))
-        cv2.imwrite(frame_save_loc + output_name, crop.astype(int))
+        cv2.imwrite(os.path.join(frame_save_loc,output_name), crop.astype(int))
 
         frameNo += 1
         timestamp += int(1 / fps * 1000)        
-    print("{} finished: processed {} images".format(raw_frame_loc,frameNo-1))
+    print("{} finished: processed {} images".format(video_frame_loc,frameNo-1))
     sys.stdout.flush()
     f_gt_frame.close()
     return frameNo
@@ -101,10 +105,9 @@ def load_gt(gesture_gt_loc,intake_gt_loc,video_sync_offset):
         """
         # if there is a unlabeled gesture with period [start_time,end_time]
         if len(gesture_locations) != 0 and start_time <= gesture_locations[gesture_idx] <= end_time:
-            
             # if there is a piece in the current gesture period that is before the default starting timestamp, 
             # consider it as the original label
-            if timeidx_to_ms(gesture_locations[gesture_idx]) - PRE_INTAKE_DURATION > timeidx_to_ms(start_time):                  
+            if timeidx_to_ms(gesture_locations[gesture_idx]) - PRE_INTAKE_DURATION > timeidx_to_ms(start_time): 
                 gesture_types.append("non_intake")
                 gesture_starts.append(timeidx_to_ms(start_time))
                 gesture_ends.append(timeidx_to_ms(gesture_locations[gesture_idx]-1) - PRE_INTAKE_DURATION)
@@ -113,7 +116,7 @@ def load_gt(gesture_gt_loc,intake_gt_loc,video_sync_offset):
             gesture_ends.append(min(timeidx_to_ms(gesture_locations[gesture_idx]) + AFTER_INTAKE_DURATION, timeidx_to_ms(end_time)))  
             # if there is a piece in the current gesture period that is after the default starting timestamp, 
             # consider it as the original label
-            if timeidx_to_ms(gesture_locations[gesture_idx]) + AFTER_INTAKE_DURATION < timeidx_to_ms(end_time):                  
+            if timeidx_to_ms(gesture_locations[gesture_idx]) + AFTER_INTAKE_DURATION < timeidx_to_ms(end_time):   
                 gesture_types.append("non_intake")
                 gesture_starts.append(timeidx_to_ms(gesture_locations[gesture_idx]+1) + AFTER_INTAKE_DURATION)
                 gesture_ends.append(timeidx_to_ms(end_time))        
@@ -133,7 +136,7 @@ def load_gt(gesture_gt_loc,intake_gt_loc,video_sync_offset):
     for line in f_gt.readlines():
         label,cur_start,cur_end = str.split(line,"\t")[0:3]
         cur_start = int(cur_start)
-        cur_end = int(cur_end)
+        cur_end = int(str.split(cur_end,"\n")[0])
                 
         #Find unlabeled video pieces
         if is_start == 0:
@@ -204,7 +207,7 @@ def load_gt(gesture_gt_loc,intake_gt_loc,video_sync_offset):
 
 def move_subject_videos(subject_name, target_loc):        
     for video_name in [f for f in os.listdir(FRAME_LOC) if f.startswith(subject_name)]:
-        move_video(FRAME_LOC+video_name, target_loc)
+        move_video(os.path.join(FRAME_LOC,video_name), target_loc)
 
 def move_video(source_loc,target_loc):
     query = "mv {} {}".format(source_loc,target_loc)
@@ -218,38 +221,44 @@ if __name__ == "__main__":
     except:
         pass
 
-    f_filelist = open(RAW_DATA_LOC + "DATA_FILENAMES.txt","r")
-    f_windows = open(RAW_DATA_LOC + "window_loc.txt","r")
+    f_filelist = open(os.path.join(RAW_DATA_LOC,"DATA_FILENAMES.txt"),"r")
+    f_windows = open(os.path.join(RAW_DATA_LOC,"window_loc.txt"),"r")
     windowlists = f_windows.readlines()
     f_windows.close()
 
     video_num = 0
     filelists = f_filelist.readlines()
     f_filelist.close()
-    """
-    filelists = ["p050/c1/20120228173840380.txt",
-                  "p047/c2/20120229194923067.txt",
-                  "p044/c1/20120301113052494.txt",
-                  "p051/c1/20120312133047898.txt",
-                  "p048/c1/20120223173312302.txt",
-                  "p045/c2/20120309114930233.txt",
-                  "p046/c1/20120222112903973.txt",
-                  "p176/c1/20120328132824062.txt",
-                  "p045/c1/20120309113007692.txt"]
-    """
+    '''
+    # for modify pre-built dataset
+    train_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("p")]
+    val_list = [f for f in os.listdir(FRAME_LOC+"val_set") if f.startswith("p")]
+    test_list = [f for f in os.listdir(FRAME_LOC+"test_set") if f.startswith("p")]
+    '''
+    #filelists = ["p352/c3/20120503175729964.txt"]
+
     process_frames_args = []
     for file_loc in filelists:
-        syncfile_loc = RAW_DATA_LOC + "/" + str.split(file_loc,".")[0] + "_sync.txt"
+        syncfile_loc = os.path.join(RAW_DATA_LOC,str.split(file_loc,".")[0] + "_sync.txt")
         f_sync = open(syncfile_loc,"r")
         video_sync_offset = int(str.split(f_sync.readline(),"\n")[0])
         f_sync.close()
 
-        gt_path = RAW_DATA_LOC  + "/".join(str.split(file_loc,"/")[0:-1])
-
+        gt_path = os.path.join(RAW_DATA_LOC, "/".join(str.split(file_loc,"/")[0:-1]))
+        video_idx = "_".join(str.split(file_loc,"/")[0:-1])
+        video_frame_loc = os.path.join(RAW_FRAME_LOC,video_idx)
+        '''
+        # for modify pre-built dataset
+        if video_idx in train_list:
+            frame_save_loc = os.path.join(FRAME_LOC,"train_set",video_idx)
+        if video_idx in val_list:
+            frame_save_loc = os.path.join(FRAME_LOC,"val_set",video_idx)
+        if video_idx in test_list:
+            frame_save_loc = os.path.join(FRAME_LOC,"test_set",video_idx)
+        '''
+        frame_save_loc = os.path.join(FRAME_LOC,video_idx)
         # check the integrity of raw files for the current video sample
-        raw_frame_loc = RAW_FRAME_LOC + "_".join(str.split(file_loc,"/")[0:-1]) + "/"
-        frame_save_loc = FRAME_LOC + "_".join(str.split(file_loc,"/")[0:-1]) + "/"
-        if not os.path.exists(raw_frame_loc):
+        if not os.path.exists(video_frame_loc):
             continue
             
         window_loc = []
@@ -258,57 +267,82 @@ if __name__ == "__main__":
                 window_loc = list(map(int,str.split(str.split(line,"\t")[1]," ")[0:4]))
         if len(window_loc) == 0:
             continue;
+            
         process_frames_args.append([window_loc, 
-                                    raw_frame_loc, 
+                                    video_frame_loc, 
                                     frame_save_loc, 
                                     gt_path,
                                     video_sync_offset, 
                                     fps])
 
         video_num += 1
+        # stop condition for debugging
+        '''
         if video_num >= MAX_VIDEO:
    			   break
-
+        '''
     # load video file
     pool = mp.Pool(40)
     ret = pool.map(process_frames,process_frames_args)
     pool.close()  
-    pool.join()                            
-
+    pool.join()                
+                
     video_list = [f for f in os.listdir(FRAME_LOC) if f.startswith("p")]
     video_list.sort(reverse=False)
+    video_num = len(video_list)
     subject_list = np.array([str.split(video,"_")[0] for video in video_list])
     subject_set = sorted(np.unique(subject_list),reverse=False)
     subject_num = len(subject_set)
+
     """
     Split training, validataion, testing set, with ratio being 0.7:0.15:0.15
     """
     try:
-        os.mkdir(FRAME_LOC+"train_set")
+        os.mkdir(os.path.join(FRAME_LOC,"train_set"))
     except:
         pass
     try:
-        os.mkdir(FRAME_LOC+"val_set")
+        os.mkdir(os.path.join(FRAME_LOC,"val_set"))
     except:
         pass
     try:
-        os.mkdir(FRAME_LOC+"test_set")
+        os.mkdir(os.path.join(FRAME_LOC,"test_set"))
     except:
         pass
 
+    f_trainlist = open(os.path.join(FRAME_LOC,"trainlist.txt"),"w")
+    f_vallist = open(os.path.join(FRAME_LOC,"vallist.txt"),"w")
+    f_testlist = open(os.path.join(FRAME_LOC,"testlist.txt"),"w")   
+    
     if subject_independent:
         random_idxs = np.random.permutation(subject_num)
         for idx in random_idxs[0:int(0.7*subject_num)]:
-            move_subject_videos(subject_set[idx], FRAME_LOC+"train_set")
+            move_subject_videos(subject_set[idx], 
+                                os.path.join(FRAME_LOC,"train_set"))
+            f_trainlist.write(subject_set[idx]+"\n")     
         for idx in random_idxs[int(0.7*subject_num):int(0.85*subject_num)]:
-            move_subject_videos(subject_set[idx], FRAME_LOC+"val_set")        
+            move_subject_videos(subject_set[idx], 
+                                os.path.join(FRAME_LOC,"val_set"))      
+            f_vallist.write(subject_set[idx]+"\n")      
         for idx in random_idxs[int(0.85*subject_num):]:
-            move_subject_videos(subject_set[idx], FRAME_LOC+"test_set")                             
+            move_subject_videos(subject_set[idx], 
+                                os.path.join(FRAME_LOC,"test_set"))        
+            f_testlist.write(subject_set[idx]+"\n")        
     else:  
-        random_idxs = np.random.permutation(MAX_VIDEO)        
-        for idx in random_idxs[0:int(0.7*MAX_VIDEO)]:
-            move_video(FRAME_LOC+video_list[idx], FRAME_LOC+"train_set")
-        for idx in random_idxs[int(0.7*MAX_VIDEO):int(0.85*MAX_VIDEO)]:
-            move_video(FRAME_LOC+video_list[idx], FRAME_LOC+"val_set")
-        for idx in random_idxs[int(0.85*MAX_VIDEO):]:
-            move_video(FRAME_LOC+video_list[idx], FRAME_LOC+"test_set")  
+        random_idxs = np.random.permutation(video_list)        
+        for idx in random_idxs[0:int(0.7*video_num)]:
+            move_video(os.path.join(FRAME_LOC,video_list[idx]), 
+                        os.path.join(FRAME_LOC,"train_set"))
+            f_trainlist.write(video_list[idx]+"\n")  
+        for idx in random_idxs[int(0.7*video_num):int(0.85*video_num)]:
+            move_video(os.path.join(FRAME_LOC,video_list[idx]), 
+                        os.path.join(FRAME_LOC,"val_set"))
+            f_vallist.write(video_list[idx]+"\n")  
+        for idx in random_idxs[int(0.85*video_num):]:
+            move_video((os.path.join(FRAME_LOC,video_list[idx]), 
+                        os.path.join(FRAME_LOC,"test_set")))  
+            f_testlist.write(video_list[idx]+"\n") 
+    f_trainlist.close()
+    f_vallist.close()
+    f_testlist.close()            
+        

@@ -193,8 +193,8 @@ def test_model(model,
     preprocess = transforms.Compose([
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                 ])
-                
-    f_matrices = open(test_save_loc + "/matrices.txt",'w')
+                          
+    f_matrices = open(os.path.join(test_save_loc,"matrices.txt"),'w')
 
     print ("=======================Test Settings===============================")
     f_matrices.write("=======================Test Settings===============================\n")  
@@ -261,7 +261,7 @@ def test_model(model,
         '''  
         Save the raw prediction probabililties for visualization
         ''' 
-        f_probs = open(test_save_loc + "/probs_{}.txt".format(video_name),'w')
+        f_probs = open(os.path.join(test_save_loc,"frame_probs",f"probs_{video_name}.txt"),'w')
         for name, window_prob in zip(frame_names,prob_list):
             #saved frame's indexes start from 0
             frame_idx = int(name[6:-4])-1
@@ -270,7 +270,7 @@ def test_model(model,
                 f_probs.write("\t{0:.6f}".format(prob_value))
             f_probs.write("\n")
         f_probs.close()
-        f_results = open(test_save_loc + "/pred_{}.txt".format(video_name),'w')
+        f_results = open(os.path.join(test_save_loc,"frame_preds",f"preds_{video_name}.txt"),'w')
         f_results.write("\n".join(["{}\t{}\t{}".format(i,j,int(k)) for i,j,k in (zip(frame_names,video_labels,video_preds))]))
         f_results.close()   
         cur_correct = np.sum(video_preds == video_labels)
