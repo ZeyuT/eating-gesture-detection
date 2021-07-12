@@ -5,7 +5,7 @@
 #PBS -e /home/zeyut/eat_detection/workspace/job_output
 #PBS -o /home/zeyut/eat_detection/workspace/job_output
 #PBS -j oe
-#PBS -J 1-3
+#PBS -J 1-2
 
 
 module load cuda/10.2.89-gcc/8.3.1

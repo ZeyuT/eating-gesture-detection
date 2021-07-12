@@ -18,7 +18,7 @@ from torchinfo import summary
 from models import RES_LSTM
 from utils import class_weights,FrameSequenceDataset,AverageMeter,RateMeter,test_model
 from constants import FRAME_LOC,RESULT_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 def main():   
     '''
