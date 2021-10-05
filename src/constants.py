@@ -1,0 +1,11 @@
+RAW_FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_rawFrames/"  
+FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_independent/"  
+#FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_dependent/"  
+RESULT_LOC = "/scratch1/zeyut/eat_detection/results/"
+WIDTH = 224
+HEIGHT = 224
+CHANNEL = 3
+LABEL_NUM = 3
+LABEL_TABLE = {"bite": 0, "drink": 1, "non_intake": 2}
+MEAN = [1.80444053, 0.80193992, 11.10639638]
+STD = [4.21282851, 3.02531022, 5.59236825]
