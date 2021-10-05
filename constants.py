@@ -1,9 +1,0 @@
-RAW_FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_rawFrames/"  
-FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_independent/"  
-#FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_dependent/"  
-RESULT_LOC = "/scratch1/zeyut/eat_detection/"
-WIDTH = 224
-HEIGHT = 224
-CHANNEL = 3
-LABEL_NUM = 3
-LABEL_TABLE = {"bite": 0, "drink": 1, "non_intake": 2}
