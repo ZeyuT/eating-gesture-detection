@@ -16,7 +16,7 @@ from torch.optim.lr_scheduler import ExponentialLR
 from torchinfo import summary
 
 from utils import class_weights,RateMeter,AverageMeter
-from constants import LABEL_TABLE,MEAN,STD
+from constants import LABEL_TABLE,MEAN,STD,LABEL_NUM
 from tqdm.auto import tqdm
 import multiprocessing as mp
 
@@ -228,11 +228,11 @@ def main():
     network = "single_lstm"
     weight_type = 4
     stride = 8
-    global LABEL_NUM
+    global model_label_num
     if label_type in ["bite","drink"]:
-        LABEL_NUM = 2
+        model_label_num = 2
     else:
-        LABEL_NUM = 3
+        model_label_num = 3
         
     log_loc = f"log_{network}_{epochs}_{raw_seq_len}_{stride}_v{weight_type}_2stage_{label_type}"
     model_loc = f"model_{network}_{epochs}_{raw_seq_len}_{stride}_v{weight_type}_2stage_{label_type}"
@@ -264,7 +264,7 @@ def main():
     except:
         pass      
 
-    model = single_LSTM(seq_len=sample_len,label_num=LABEL_NUM).cuda()
+    model = single_LSTM(seq_len=sample_len,label_num=model_label_num).cuda()
     model = torch.nn.DataParallel(model).cuda()
     #summary(model, input_size=(batch_size,seq_len, CHANNEL, HEIGHT, WIDTH))  
 
@@ -447,7 +447,7 @@ def val_loop(dataloader, model, loss_fn):
     model.eval()
     val_loss = AverageMeter()
     val_acc = RateMeter()    
-    val_tpr = [RateMeter() for _ in range(LABEL_NUM)]  
+    val_tpr = [RateMeter() for _ in range(model_label_num)]  
     with torch.no_grad():
         for (input, target) in dataloader:
             input = input.type(torch.cuda.FloatTensor)
@@ -462,12 +462,12 @@ def val_loop(dataloader, model, loss_fn):
             #update results
             effective_pred = pred[target!=-1]
             effective_target = target[target!=-1]
-            for label in range(LABEL_NUM):
+            for label in range(model_label_num):
                 cur_tp = torch.logical_and(effective_pred==effective_target, effective_target==label).sum().item()
                 cur_p = (effective_target==label).sum().item()
                 val_tpr[label].update(cur_tp,cur_p) 
             val_acc.update(correct,effective_target.size()[0])  
-    val_uar = np.sum([val_tpr[label].rate for label in range(LABEL_NUM)]) / LABEL_NUM   
+    val_uar = np.sum([val_tpr[label].rate for label in range(model_label_num)]) / model_label_num   
     return val_loss.avg, val_acc.rate, val_uar
 
     
