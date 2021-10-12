@@ -5,7 +5,7 @@
 #PBS -e /home/zeyut/eat_detection/workspace/job_output
 #PBS -o /home/zeyut/eat_detection/workspace/job_output
 #PBS -j oe
-#PBS -J 1-3
+#PBS -J 1-6
 
 
 module load cuda/10.2.89-gcc/8.3.1
@@ -16,14 +16,14 @@ source activate torch-1.8
 
 cd /scratch1/zeyut/eat_detection
 
-cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/train_2nd_model.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/utils.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/constants.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/inputs_2nd_train.txt /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/train_2nd_model.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/utils.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/constants.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/bash/inputs_2nd_train.txt /scratch1/zeyut/eat_detection
 
 inputs=( $(sed -n ${PBS_ARRAY_INDEX}p inputs_2nd_train.txt) )
 
-python ./train_2nd_model.py ${inputs[0]} ${inputs[1]}
+python ./train_2nd_model.py ${inputs[0]} ${inputs[1]} ${inputs[2]}
 
 
 
