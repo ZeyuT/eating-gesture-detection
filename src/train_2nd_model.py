@@ -457,7 +457,7 @@ def main():
         # Initialize the loss function
         loss_fn = nn.CrossEntropyLoss(weight=torch.from_numpy(weights).float().cuda(),
                                       ignore_index=-1)
-        optimizer = torch.optim.Adam(model.parameters(),lr=0.0001)
+        optimizer = torch.optim.Adam(model.parameters(),lr=0.001)
         scheduler = ExponentialLR(optimizer, gamma=0.9)
         best_val_uar = 0
         for epoch in range(epochs):
