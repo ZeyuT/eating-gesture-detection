@@ -41,29 +41,33 @@ class probabilityDataset(data.Dataset):
         self.raw_sample_len = raw_sample_len
         self.downsample_rate = downsample_rate
         self.raw_stride = raw_stride
-        # use features from 10 runs for training
-        for model_idx in range(1,11):
+        if label_type in ["bite","drink"]:
+            self.feature_num = 2
+        elif label_type == "all":
+            self.feature_num = 3
+        self.mean_list = []
+        self.std_list = []
+        
+        # use features from run_times runs for training
+        for model_idx in range(1,run_times+1):
             feature_loc = os.path.join(data_loc,f"{model_idx}/result_RES_LSTM_30_16_8_v4_{mode}/frame_features/")
-            read_samples_args.append([feature_loc,gt_loc])
-        pool = mp.Pool(20)
+            read_samples_args.append([feature_loc,gt_loc,model_idx])
+        pool = mp.Pool(10)
         ret = pool.map(self.read_raw_samples,read_samples_args)
 
         for data in ret:
             sample_list.append(data[0])
             label_list.append(data[1])
+            self.mean_list.append(data[2])
+            self.std_list.append(data[3])
         self.sample_list = np.concatenate(sample_list)
         self.label_list = np.concatenate(label_list)
         
         pool.close()  
         pool.join() 
-    
-        # Standardization         
-        if self.label_type=="bite":
-            self.sample_list[self.label_list!=-1] = (self.sample_list[self.label_list!=-1]-MEAN[0])/STD[0]
-        elif self.label_type=="drink":
-            self.sample_list[self.label_list!=-1] = (self.sample_list[self.label_list!=-1]-MEAN[1])/STD[1]
-        else:
-            self.sample_list[self.label_list!=-1] = (self.sample_list[self.label_list!=-1]-MEAN[0:2])/STD[0:2]
+        np.savetxt(os.path.join(data_loc,f"train_mean_{label_type}.txt"),np.array(self.mean_list))
+        np.savetxt(os.path.join(data_loc,f"train_std_{label_type}.txt"),np.array(self.std_list))
+
         self.finish_initialize = True
         
     def __len__(self):
@@ -73,52 +77,71 @@ class probabilityDataset(data.Dataset):
         return self.sample_list[idx],self.label_list[idx]
     
     def read_raw_samples(self, args):
-        sample_loc,gt_loc = args[0], args[1]
+        sample_loc,gt_loc,model_idx = args[0],args[1],args[2]
         video_list = ["_".join(f.split(".")[0].split("_")[1:3]) for f in os.listdir(sample_loc)]
+        #video_list = ["p072_c1"]
         samples = []
         labels = []
         count = 0
         for video_idx in video_list:
             cur_samples,cur_labels = self.read_features(sample_loc, gt_loc, video_idx)
-            samples.append(cur_samples[:,::self.downsample_rate,:])
-            labels.append(cur_labels[:,::self.downsample_rate])
-            #count += 1
-            #if count > 4:
-                #break
-        return np.concatenate(samples), np.concatenate(labels)
+            samples.append(cur_samples)
+            labels.append(cur_labels)        
+        samples = np.concatenate(samples) 
+        labels = np.concatenate(labels)
+        mean = []
+        std = []
+        
+        # standarization per model, and per feature
+        for feature_idx in range(self.feature_num):
+            cur_mean = samples[labels!=-1,feature_idx].mean(axis=0)
+            cur_std = samples[labels!=-1,feature_idx].std(axis=0)
+            samples[labels!=-1,feature_idx] = (samples[labels!=-1,feature_idx]-cur_mean)/cur_std
+            mean.append(cur_mean)
+            std.append(cur_std)
+          
+        # downsample
+        samples = samples[:,::self.downsample_rate,:]
+        labels = labels[:,::self.downsample_rate]
+        mean = np.array(mean)
+        std = np.array(std)
+
+        return samples, labels, mean, std
   
     def read_features(self, feature_loc, gt_loc, video_idx):
         f_gt = open(os.path.join(gt_loc,video_idx,"gt_frame_3labels.txt"),"r")
         gt_content = f_gt.readlines()
-        f_gt.close()   
+        f_gt.close()         
         
         f_feature = open(os.path.join(feature_loc,f"features_{video_idx}.txt"),"r")
         if self.label_type == "all":
             # default sample value is 0, and default label is -1( will be ingored when computing loss)
-            samples = np.zeros((self.raw_seq_len,self.raw_sample_len,2)) 
+            samples = np.zeros((self.raw_seq_len,self.raw_sample_len,3)) 
             labels = np.ones((self.raw_seq_len,self.raw_sample_len)) * (-1)            
-            for col_idx, line in enumerate(f_feature.readlines()):
+            for row_idx, line in enumerate(f_feature.readlines()):
                 seq_features = line.split("\n")[0].split("\t")[1:]
-                for row_idx in range(0,len(seq_features),3):
-                    position_idx = row_idx // 3  # the frame index in the current sequence
-                    frame_idx = col_idx * self.raw_stride + position_idx  # the frame index in the current frame list
-                    samples[position_idx,frame_idx,0:2] = seq_features[row_idx:row_idx+2]
+                for col_idx in range(0,len(seq_features),3):
+                    position_idx = col_idx // 3  # the frame index in the current sequence
+                    frame_idx = row_idx * self.raw_stride + position_idx  # the frame index in the current frame list
+                    samples[position_idx,frame_idx,0:3] = seq_features[col_idx:col_idx+3]
             frame_gt = np.array([LABEL_TABLE[line.split("\n")[0].split("\t")[1]] for line in gt_content])
             
         if self.label_type in ["bite","drink"]:
-            samples = np.zeros((self.raw_seq_len,self.raw_sample_len,1)) 
+            samples = np.zeros((self.raw_seq_len,self.raw_sample_len,2)) 
             labels = np.ones((self.raw_seq_len,self.raw_sample_len)) * (-1)       
             target_position = 0 if self.label_type == "bite" else 1
-            for col_idx, line in enumerate(f_feature.readlines()):
+            for row_idx, line in enumerate(f_feature.readlines()):
                 seq_features = line.split("\n")[0].split("\t")[1:]
-                for row_idx in range(0,len(seq_features),3):
-                    position_idx = row_idx // 3  # the frame index in the current sequence
-                    frame_idx = col_idx * self.raw_stride + position_idx  # the frame index in the current frame list
-                    samples[position_idx,frame_idx] = seq_features[row_idx+target_position]
+                for col_idx in range(0,len(seq_features),3):
+                    position_idx = col_idx // 3  # the frame index in the current sequence
+                    frame_idx = row_idx * self.raw_stride + position_idx  # the frame index in the current video frame list
+                    samples[position_idx,frame_idx,0] = seq_features[col_idx+target_position]
+                    samples[position_idx,frame_idx,1] = seq_features[col_idx+2]
+                    
             frame_gt = np.array([LABEL_TABLE[line.split("\n")[0].split("\t")[1]] for line in gt_content])
             frame_gt = (frame_gt==LABEL_TABLE[self.label_type]).astype("int")
         f_feature.close()
-            
+
         for idx in range(0,self.raw_seq_len):
             labels[idx,idx:idx+len(frame_gt)-self.raw_seq_len+1] = frame_gt[idx:idx+len(frame_gt)-self.raw_seq_len+1]
             
@@ -130,11 +153,12 @@ class single_LSTM(nn.Module):
         self.lstm = nn.LSTM(input_size=input_size,
                             hidden_size=64,
                             num_layers=2,
+                            bidirectional=True,
                             batch_first=True)
         self.batch_norm = nn.BatchNorm1d(affine=False,
                                           num_features=int(seq_len))
         self.dropout = nn.Dropout(p=0.5)
-        self.fc = nn.Sequential(nn.Linear(64, label_num),
+        self.fc = nn.Sequential(nn.Linear(2*64, label_num),
                                     nn.ReLU())         
         self.act = nn.Softmax(dim=-1)
             
@@ -164,18 +188,21 @@ class double_LSTM(nn.Module):
     def __init__(self,input_size=3,seq_len=10000,label_num=3):
         super(double_LSTM, self).__init__()
         self.lstm1 = nn.LSTM(input_size=input_size,
-                            hidden_size=64,
+                            hidden_size=256,
                             num_layers=2,
+                            bidirectional=True,
                             batch_first=True)
-        self.lstm2 = nn.LSTM(input_size=64,
-                            hidden_size=32,
+        self.lstm2 = nn.LSTM(input_size=2*256,
+                            hidden_size=128,
                             num_layers=2,
+                            bidirectional=True,
                             batch_first=True)
         self.batch_norm = nn.BatchNorm1d(affine=False,
                                           num_features=int(seq_len))
         self.dropout = nn.Dropout(p=0.5)
-        self.fc = nn.Sequential(nn.Linear(32, label_num),
-                                    nn.ReLU())         
+        self.fc = nn.Sequential(nn.Linear(2*128, 32),
+                                nn.Linear(32, label_num),
+                                 nn.ReLU())         
         self.act = nn.Softmax(dim=-1)
             
         '''initialization'''                          
@@ -212,6 +239,8 @@ def test_2nd_stage(model,
                     data_loc, 
                     gt_loc, 
                     test_save_loc,
+                    mean,
+                    std,
                     label_type="all",
                     downsample_rate=4, 
                     test_stride=1):      
@@ -239,12 +268,7 @@ def test_2nd_stage(model,
         frame_gt = raw_frame_gt[::test_stride*downsample_rate]
         frame_name = raw_frame_names[::test_stride*downsample_rate]
         # Standardization
-        if label_type=="bite":
-            samples[labels!=-1] = (samples[labels!=-1]-MEAN[0])/STD[0]
-        elif label_type=="drink":
-            samples[labels!=-1] = (samples[labels!=-1]-MEAN[1])/STD[1]
-        else:
-            samples[labels!=-1] = (samples[labels!=-1]-MEAN[0:2])/STD[0:2]
+        samples[labels!=-1] = (samples[labels!=-1]-mean)/std
             
         input = torch.from_numpy(samples).type(torch.cuda.FloatTensor)
         input = Variable(input).cuda()
@@ -289,26 +313,28 @@ def read_features(feature_loc,
     f_feature = open(os.path.join(feature_loc,f"features_{video_idx}.txt"),"r")
     # default sample value is 0, and default label is -1( will be ingored when computing loss)
     if label_type == "all":
-        samples = np.zeros((raw_seq_len,raw_sample_len,2)) 
+        samples = np.zeros((raw_seq_len,raw_sample_len,3)) 
         labels = np.ones((raw_seq_len,raw_sample_len)) * (-1)            
-        for col_idx, line in enumerate(f_feature.readlines()):
+        for row_idx, line in enumerate(f_feature.readlines()):
             seq_features = line.split("\n")[0].split("\t")[1:]
-            for row_idx in range(0,len(seq_features),3):
-                position_idx = row_idx // 3  # the frame index in the current sequence
-                frame_idx = col_idx * raw_stride + position_idx  # the frame index in the current frame list
-                samples[position_idx,frame_idx,0:2] = seq_features[row_idx:row_idx+2]
+            for col_idx in range(0,len(seq_features),3):
+                position_idx = col_idx // 3  # the frame index in the current sequence
+                frame_idx = row_idx * raw_stride + position_idx  # the frame index in the current frame list
+                samples[position_idx,frame_idx,0:3] = seq_features[col_idx:col_idx+3]
         frame_gt = np.array(([LABEL_TABLE[line.split("\n")[0].split("\t")[1]] for line in gt_content]))
         
     if label_type in ["bite","drink"]:
-        samples = np.zeros((raw_seq_len,raw_sample_len,1)) 
+        samples = np.zeros((raw_seq_len,raw_sample_len,2)) 
         labels = np.ones((raw_seq_len,raw_sample_len)) * (-1)       
         target_position = 0 if label_type == "bite" else 1
-        for col_idx, line in enumerate(f_feature.readlines()):
+        for row_idx, line in enumerate(f_feature.readlines()):
             seq_features = line.split("\n")[0].split("\t")[1:]
-            for row_idx in range(0,len(seq_features),3):
-                position_idx = row_idx // 3  # the frame index in the current sequence
-                frame_idx = col_idx * raw_stride + position_idx  # the frame index in the current frame list
-                samples[position_idx,frame_idx] = seq_features[row_idx+target_position]
+            for col_idx in range(0,len(seq_features),3):
+                position_idx = col_idx // 3  # the frame index in the current sequence
+                frame_idx = row_idx * raw_stride + position_idx  # the frame index in the current frame list
+                samples[position_idx,frame_idx] = seq_features[col_idx+target_position]
+                samples[position_idx,frame_idx,1] = seq_features[col_idx+2]
+                
         frame_gt = np.array(([LABEL_TABLE[line.split("\n")[0].split("\t")[1]] for line in gt_content]))
         frame_gt = (frame_gt==LABEL_TABLE[label_type]).astype("int")
     f_feature.close()
@@ -334,10 +360,10 @@ def main():
     global model_label_num
     if label_type in ["bite","drink"]:
         model_label_num = 2
-        input_size = 1
+        input_size = 2
     else:
         model_label_num = 3
-        input_size = 2
+        input_size = 3
         
     log_loc = f"log_{network}_{epochs}_{raw_seq_len}_{stride}_v{weight_type}_2stage_{label_type}"
     model_loc = f"model_{network}_{epochs}_{raw_seq_len}_{stride}_v{weight_type}_2stage_{label_type}"
@@ -506,11 +532,17 @@ def main():
     print("testing model...")
     start_time = time.time()
     sys.stdout.flush()
+   
+    mean_list = np.loadtxt(f"/scratch1/zeyut/eat_detection/results_10runs/train_mean_{label_type}.txt")
+    std_list = np.loadtxt(f"/scratch1/zeyut/eat_detection/results_10runs/train_std_{label_type}.txt")
+    
     for model_idx in range(1,11):
         test_2nd_stage(model = model,
                         data_loc = f"/scratch1/zeyut/eat_detection/results_10runs/{model_idx}/result_RES_LSTM_30_16_8_v4_test/frame_features/", 
                         gt_loc = "/scratch1/zeyut/eat_detection/all_labels/",
                         test_save_loc = os.path.join(test_loc,f"{model_idx}"),
+                        mean = mean_list[model_idx-1],
+                        std = std_list[model_idx-1],
                         label_type = label_type,
                         downsample_rate = downsample_rate, 
                         test_stride = 1)       
