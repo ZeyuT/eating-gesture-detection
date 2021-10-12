@@ -11,7 +11,8 @@ log_*/
 model_*/
 test_*/
 test/
-
+*.jpg
+*.txt
 # Distribution / packaging
 .Python
 build/
