@@ -15,7 +15,7 @@ from torch.optim.lr_scheduler import ExponentialLR
 
 from torchinfo import summary
 
-from models import RES_LSTM
+from models import RES_LSTM,RES_BILSTM
 from utils import class_weights,FrameSequenceDataset,AverageMeter,RateMeter,test_model
 from constants import FRAME_LOC,RESULT_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM
 from tqdm.auto import tqdm
@@ -38,7 +38,7 @@ def main():
         stride = 32
         batch_size = 8
         epochs = 3
-        network = "RES_LSTM"
+        network = "RES_BILSTM"
         weight_type = 3
     else:
         batch_size = int(sys.argv[2])
@@ -48,14 +48,14 @@ def main():
         stride = int(sys.argv[6])
         model_idx = int(sys.argv[7])
         weight_type = 4
-    if network == "RES_LSTM":
+    if network in ["RES_BILSTM","RES_LSTM"]:
         model_type = 1
     elif network == "CNN3D_Model":
         model_type = 2
 
     #v{x}: version x for class weight calculation
     if train == 2:
-        print("training models in test mode\n")
+        print("training models in debug mode\n")
         log_loc = f"log_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_debug"
         model_loc = f"model_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_debug"
         test_loc = f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_debug"
@@ -73,8 +73,18 @@ def main():
         elif train == 5:
             print("test models on val set \n")
             test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_val")
+        # Temporary case
+        elif train == 0:
+            print("test models on test set \n")
+            model_loc = os.path.join(f"/scratch1/zeyut/eat_detection/results_10runs/{model_idx}",f"model_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}")
+            test_loc = os.path.join(f"/scratch1/zeyut/eat_detection/results_10runs/{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_test")
         else:
             test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_test") 
+    
+    try: 
+        os.mkdir(RESULT_LOC)
+    except:
+        pass  
     try: 
         os.mkdir(os.path.join(RESULT_LOC,f"{model_idx}"))
     except:
@@ -103,8 +113,11 @@ def main():
         os.mkdir(os.path.join(test_loc,"frame_features"))
     except:
         pass 
-                
-    model = RES_LSTM(seq_len=seq_len).cuda()
+    
+    if network == "RES_BILSTM":                
+        model = RES_BILSTM(seq_len=seq_len).cuda()
+    elif network == "RES_LSTM":                
+        model = RES_LSTM(seq_len=seq_len).cuda()
     model = torch.nn.DataParallel(model).cuda()
     #summary(model, input_size=(batch_size,seq_len, CHANNEL, HEIGHT, WIDTH))     
     if train != 0 and train < 4:      
@@ -239,12 +252,13 @@ def main():
             scheduler.step()
         log.close() 
         print("model training finished")
+        
     print("load the best model for testing")
     sys.stdout.flush()
     try:
         checkpoint = torch.load(os.path.join(model_loc, f"checkpoint_best.tar"))
     except:
-        print("no 'checkpoint_best.tar' is found")
+        print("no 'checkpoint_best.tar' found")
         exit(0)
     model.load_state_dict(checkpoint['model_state_dict'])
            
@@ -302,10 +316,12 @@ def train_loop(dataloader, model, loss_fn, optimizer):
     train_acc = RateMeter() 
     with tqdm(dataloader,unit= "batch") as tepoch:
         for input, target in tepoch:
+            input = input.type(torch.cuda.FloatTensor)
             input = Variable(input).cuda()
             target = Variable(target).cuda()
             # Compute prediction and loss
-            output = model(input).permute(0, 2, 1)
+            output,_ = model(input)
+            output = output.permute(0, 2, 1)
             loss = loss_fn(output, target)
             pred = output.argmax(1)
             # Backpropagation
@@ -328,9 +344,11 @@ def val_loop(dataloader, model, loss_fn):
     val_tpr = [RateMeter() for _ in range(LABEL_NUM)]  
     with torch.no_grad():
         for (input, target) in dataloader:
+            input = input.type(torch.cuda.FloatTensor)
             input = Variable(input).cuda()
             target = Variable(target).cuda()
-            output = model(input).permute(0, 2, 1)
+            output,_ = model(input)
+            output = output.permute(0, 2, 1)
             loss = loss_fn(output, target)
             pred = output.argmax(1)
             val_loss.update(loss.item())

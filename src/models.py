@@ -37,7 +37,7 @@ class Spatial_Encoder(nn.Module):
         module_list = list(model.children())
         del module_list[-1]
         self.net = nn.Sequential(*module_list)
-        
+
 class RES_LSTM(nn.Module):
     def __init__(self,seq_len=16,basemodel='resnet34'):
         super(RES_LSTM, self).__init__()
@@ -62,6 +62,52 @@ class RES_LSTM(nn.Module):
         self.flatten = nn.Flatten(start_dim=2,end_dim=-1)
         self.dropout = nn.Dropout(p=0.5)
         self.fc = nn.Sequential(nn.Linear(128, LABEL_NUM),
+                                nn.ReLU())                                
+        for name, param in self.fc.named_parameters():
+            if 'weight' in name:
+                nn.init.kaiming_normal_(param)
+            elif 'bias' in name:
+                nn.init.constant_(param, 0.0)   
+        
+        self.act = nn.Softmax(dim=-1)
+        
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.flatten(x)
+        x = self.batch_norm(x)
+        self.lstm.flatten_parameters()
+        x,_ = self.lstm(x)
+        x = self.dropout(x)
+        x = self.fc(x)
+        fc_output = x
+        output = self.act(x)
+        return output,fc_output
+        
+class RES_BILSTM(nn.Module):
+    def __init__(self,seq_len=16,basemodel='resnet34'):
+        super(RES_BILSTM, self).__init__()
+        self.encoder = Spatial_Encoder(basemodel)
+        if basemodel=='resnet34':
+            encoder_size = 512
+        if basemodel=='resnet50':
+            encoder_size = 2048
+        self.lstm = nn.LSTM(input_size=encoder_size,
+                            hidden_size=128,
+                            num_layers=2,
+                            bidirectional=True,
+                            batch_first=True)
+        for name, param in self.lstm.named_parameters():
+            if 'bias' in name:
+                 nn.init.constant_(param, 0.0)
+            elif 'weight_ih' in name:
+                 nn.init.kaiming_normal_(param)
+            elif 'weight_hh' in name:
+                 nn.init.orthogonal_(param)
+                 
+        self.batch_norm = nn.BatchNorm1d(num_features=seq_len)
+        self.flatten = nn.Flatten(start_dim=2,end_dim=-1)
+        self.dropout = nn.Dropout(p=0.5)
+        self.fc = nn.Sequential(nn.Linear(2*128, LABEL_NUM),
                                 nn.ReLU())                                
         for name, param in self.fc.named_parameters():
             if 'weight' in name:
