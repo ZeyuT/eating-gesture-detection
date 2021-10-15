@@ -266,26 +266,44 @@ def test_2nd_stage(model,
         samples = raw_samples[::test_stride*downsample_rate,::downsample_rate,:]
         labels = raw_labels[::test_stride*downsample_rate,::downsample_rate]
         frame_gt = raw_frame_gt[::test_stride*downsample_rate]
-        frame_name = raw_frame_names[::test_stride*downsample_rate]
+        frame_names = raw_frame_names[::test_stride*downsample_rate]
         # Standardization
         samples[labels!=-1] = (samples[labels!=-1]-mean)/std
             
         input = torch.from_numpy(samples).type(torch.cuda.FloatTensor)
         input = Variable(input).cuda()
         output = model(input)
-        preds = output.detach().cpu().numpy().argmax(-1)
+        probs = output.detach().cpu().numpy()
+        preds = probs.argmax(-1)
+        
         if label_type in ["bite","drink"]:
-            heat_map = np.zeros((len(labels[0]),2))
+            heat_map = np.zeros((len(samples[0]),2))
         else:
-            heat_map = np.zeros((len(labels[0]),LABEL_NUM))
+            heat_map = np.zeros((len(samples[0]),LABEL_NUM))
         for sample_idx in range(len(preds)):
             cur_label = labels[sample_idx]
+            # Here the length of a test video and the the starting idx of current frame sequence are known, 
+            # so it is reasonable to trim predictions accordingly before evaluating results
+            # which is indicated by array [cur_label!=-1]
+            cur_prob = probs[sample_idx][cur_label!=-1]
             cur_pred = preds[sample_idx][cur_label!=-1]
+            cur_names = frame_names[cur_label[:len(frame_names)]!=-1]
             for frame_idx in range(len(cur_pred)):
                 heat_map[sample_idx*test_stride + frame_idx][cur_pred[frame_idx]] += 1
-            f_results = open(os.path.join(test_save_loc,"frame_preds",f"sub_preds_{video_idx}_{sample_idx}.txt"),'w')
-            f_results.write("\n".join(["{}\t{}".format(int(i),int(j)) for i,j in (zip(cur_label[cur_label!=-1],cur_pred))]))
-            f_results.close()
+                
+            f_probs = open(os.path.join(test_save_loc,"frame_probs",f"probs_{video_idx}_{sample_idx}.txt"),'w')
+            for name, prob_group in zip(cur_names,cur_prob):
+                # frame's indexes start from 1.
+                frame_idx = int(name[6:-4])
+                f_probs.write("{}".format(frame_idx))
+                for prob_value in prob_group:
+                    f_probs.write("\t{0:.6f}".format(prob_value))
+                f_probs.write("\n")
+            f_probs.close()   
+            f_preds = open(os.path.join(test_save_loc,"frame_preds",f"sub_preds_{video_idx}_{sample_idx}.txt"),'w')
+            f_preds.write("\n".join(["{}\t{}\t{}".format(i,int(j),int(k)) for i,j,k in \
+                                        (zip(frame_names[cur_label[:len(frame_names)]!=-1],cur_label[cur_label!=-1],cur_pred))]))
+            f_preds.close()
             
         final_preds = np.argmax(heat_map, axis=-1)
         '''
@@ -295,7 +313,7 @@ def test_2nd_stage(model,
             upsampled_preds[pred_idx] = final_preds[round(pred_idx/downsample_rate)]
         '''
         f_results = open(os.path.join(test_save_loc,"frame_preds",f"preds_{video_idx}.txt"),'w')
-        f_results.write("\n".join(["{}\t{}\t{}".format(i,int(j),int(k)) for i,j,k in (zip(frame_name,frame_gt,final_preds))]))
+        f_results.write("\n".join(["{}\t{}\t{}".format(i,int(j),int(k)) for i,j,k in (zip(frame_names,frame_gt,final_preds))]))
         f_results.close() 
         
 def read_features(feature_loc, 
@@ -307,7 +325,7 @@ def read_features(feature_loc,
               raw_sample_len=20000):
     f_gt = open(os.path.join(gt_loc,video_idx,"gt_frame_3labels.txt"),"r")
     gt_content = f_gt.readlines()
-    frame_names = [line.split("\n")[0].split("\t")[0] for line in gt_content]    
+    frame_names = np.array([line.split("\n")[0].split("\t")[0] for line in gt_content])
     f_gt.close()   
     
     f_feature = open(os.path.join(feature_loc,f"features_{video_idx}.txt"),"r")

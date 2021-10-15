@@ -247,6 +247,7 @@ def test_model(model,
             tbatch.set_description(f"video {video_name}")
             with torch.no_grad():
                 for input in tbatch:
+                    input = input.type(torch.cuda.FloatTensor)
                     input = Variable(input).cuda()
                     output,fc_output = model(input)
                     cur_prob = output.detach().cpu().numpy()
