@@ -14,10 +14,10 @@ source activate torch-1.8
 
 cd /scratch1/zeyut/eat_detection
 
-cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/extract_frames.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/process_frames.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/constants.py /scratch1/zeyut/eat_detection
-python extract_frames.py 8
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/extract_frames.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/process_frames.py /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/constants.py /scratch1/zeyut/eat_detection
+python extract_frames.py 16
 
 
   
