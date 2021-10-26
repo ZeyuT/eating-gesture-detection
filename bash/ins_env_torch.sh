@@ -1,6 +1,9 @@
-pip install torch==1.8.1+cu102 \
-            torchvision==0.9.1+cu102 \
-            torchaudio==0.8.1 \
+pip install torch==1.9.1 \
+            torchvision \
+            torchaudio \
+            fairscale \
+            fvcore \
+            simplejson \
             torchinfo \
             opencv-contrib-python==4.2.0.34 \
             opencv-python==4.2.0.34 \
