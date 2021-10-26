@@ -4,12 +4,7 @@ import subprocess
 import numpy as np
 import cv2
 import multiprocessing as mp
-from constants import WIDTH,HEIGHT,RAW_FRAME_LOC
-
-RAW_DATA_LOC = "/home/zeyut/eat_detection/CafeteriaData/"
-
-PRE_INTAKE_DURATION = 500 # in ms
-AFTER_INTAKE_DURATION = 8000 # in ms
+from constants import DATA_LOC,RAW_DATA_LOC
 
 def ConvertMsecFormat(msec):
     return "{:02d}:{:02d}:{:02d}".format(int(msec/(60*60*1000)),int(msec%(60*60*1000)/(60*1000)),int(msec%(60*1000)/(1000)))
@@ -39,11 +34,13 @@ def extract_raw_frames(args):
   
 if __name__ == "__main__": 
     fps = int(sys.argv[1]) 
+    global RAW_FRAME_LOC
+    RAW_FRAME_LOC = os.path.join(DATA_LOC, f"VideoData_rawFrames_{fps}hz/") 
     try:
         os.mkdir(RAW_FRAME_LOC)
     except:
         pass
-
+    
     f_filelist = open(os.path.join(RAW_DATA_LOC,"DATA_FILENAMES.txt"),"r")
     f_windows = open(os.path.join(RAW_DATA_LOC,"window_loc.txt"),"r")
     windowlists = f_windows.readlines()
