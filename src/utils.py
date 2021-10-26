@@ -166,8 +166,11 @@ class AverageMeter(object):
         self.val = val
         self.sum += val * n
         self.count += n
-        self.avg = self.sum / self.count
-
+        if self.count:
+            self.avg = self.sum / self.count
+        else:
+            self.avg = 0
+            
 class RateMeter(object):
     """Computes and stores the average rate (acc, TPR, etc)"""
     def __init__(self):
