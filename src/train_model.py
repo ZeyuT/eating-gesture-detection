@@ -73,11 +73,6 @@ def main():
         elif train == 5:
             print("test models on val set \n")
             test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_val")
-        # Temporary case
-        elif train == 0:
-            print("test models on test set \n")
-            model_loc = os.path.join(f"/scratch1/zeyut/eat_detection/results_10runs/{model_idx}",f"model_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}")
-            test_loc = os.path.join(f"/scratch1/zeyut/eat_detection/results_10runs/{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_test")
         else:
             test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_test") 
     
