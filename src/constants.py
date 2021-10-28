@@ -1,8 +1,5 @@
 RAW_DATA_LOC = "/home/zeyut/eat_detection/CafeteriaData/"
-DATA_LOC = "/scratch1/zeyut/eat_detection/"
-RAW_FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_rawFrames_2hz/"  
-FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_independent_2hz/"  
-#FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_dependent/"  
+FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_independent_8hz/"
 RESULT_LOC = "/scratch1/zeyut/eat_detection/results/"
 WIDTH = 224
 HEIGHT = 224
