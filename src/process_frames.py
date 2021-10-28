@@ -263,7 +263,7 @@ if __name__ == '__main__':
         os.mkdir(FRAME_LOC)
     except:
         pass
-    
+    """
     f_filelist = open(os.path.join(RAW_DATA_LOC,'DATA_FILENAMES.txt'),'r')
     f_windows = open(os.path.join(RAW_DATA_LOC,'window_loc.txt'),'r')
     windowlists = f_windows.readlines()
@@ -332,7 +332,7 @@ if __name__ == '__main__':
     print(f'new bites& drink frames: {(np.sum(results,axis=0)*8/1000).astype(int)}')    
     pool.close()  
     pool.join()                
-    
+    """
     '''
     Split training, validataion, testing set, with ratio being 0.7:0.15:0.15
     '''
@@ -348,20 +348,20 @@ if __name__ == '__main__':
         os.mkdir(os.path.join(FRAME_LOC,'test_set'))
     except:
         pass
-    if 'trainlist' in os.listdir(FRAME_LOC):
+    if 'trainlist.txt' in os.listdir(FRAME_LOC):
         # if there is pre-generated video list for splitting dataset
         f_trainlist = open(os.path.join(FRAME_LOC,'trainlist.txt'),'r')
         f_vallist = open(os.path.join(FRAME_LOC,'vallist.txt'),'r')
         f_testlist = open(os.path.join(FRAME_LOC,'testlist.txt'),'r')   
         if subject_independent:
             for subject_idx in f_trainlist.readlines():
-                move_subject_videos(subject_idx, 
+                move_subject_videos(subject_idx.split("\n")[0], 
                                     os.path.join(FRAME_LOC,'train_set'))
             for subject_idx in f_vallist.readlines():
-                move_subject_videos(subject_idx, 
+                move_subject_videos(subject_idx.split("\n")[0], 
                                     os.path.join(FRAME_LOC,'val_set'))      
             for subject_idx in f_testlist.readlines():
-                move_subject_videos(subject_idx, 
+                move_subject_videos(subject_idx.split("\n")[0], 
                                     os.path.join(FRAME_LOC,'test_set'))        
         else:  
             for video_idx in f_trainlist.readlines():
