@@ -13,6 +13,10 @@ test_*/
 test/
 *.jpg
 *.txt
+# Pretrained models
+*.pyth
+*.pkl
+*.pt
 # Distribution / packaging
 .Python
 build/
