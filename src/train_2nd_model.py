@@ -153,12 +153,12 @@ class single_LSTM(nn.Module):
         self.lstm = nn.LSTM(input_size=input_size,
                             hidden_size=64,
                             num_layers=2,
-                            bidirectional=True,
+                            bidirectional=False,
                             batch_first=True)
         self.batch_norm = nn.BatchNorm1d(affine=False,
                                           num_features=int(seq_len))
         self.dropout = nn.Dropout(p=0.5)
-        self.fc = nn.Sequential(nn.Linear(2*64, label_num),
+        self.fc = nn.Sequential(nn.Linear(64, label_num),
                                     nn.ReLU())         
         self.act = nn.Softmax(dim=-1)
             
@@ -190,17 +190,17 @@ class double_LSTM(nn.Module):
         self.lstm1 = nn.LSTM(input_size=input_size,
                             hidden_size=256,
                             num_layers=2,
-                            bidirectional=True,
+                            bidirectional=False,
                             batch_first=True)
-        self.lstm2 = nn.LSTM(input_size=2*256,
+        self.lstm2 = nn.LSTM(input_size=256,
                             hidden_size=128,
                             num_layers=2,
-                            bidirectional=True,
+                            bidirectional=False,
                             batch_first=True)
         self.batch_norm = nn.BatchNorm1d(affine=False,
                                           num_features=int(seq_len))
         self.dropout = nn.Dropout(p=0.5)
-        self.fc = nn.Sequential(nn.Linear(2*128, 32),
+        self.fc = nn.Sequential(nn.Linear(128, 32),
                                 nn.Linear(32, label_num),
                                  nn.ReLU())         
         self.act = nn.Softmax(dim=-1)
