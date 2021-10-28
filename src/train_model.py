@@ -219,7 +219,7 @@ def main():
             print(message)
             sys.stdout.flush() 
             log.write(message+ '\n') 
-            train_loss, train_acc = train_loop(train_loader, model, loss_fn, optimizer)
+            train_loss, train_acc = train_loop(train_loader, model, loss_fn, optimizer, 10000)
             print("validating...")   
             sys.stdout.flush() 
             val_loss, val_acc, val_uar = val_loop(val_loader, model, loss_fn)        
@@ -269,7 +269,7 @@ def main():
                   test_save_loc = test_loc, 
                   seq_len = seq_len, 
                   model_type = model_type,
-                  test_batch_size = 100,
+                  test_batch_size = 32,
                   test_stride=1)
     elif train < 4:
         test_video_list = [f for f in os.listdir(FRAME_LOC+"test_set") if f.startswith("p")] 
@@ -279,7 +279,7 @@ def main():
                   test_save_loc = test_loc, 
                   seq_len = seq_len, 
                   model_type = model_type,
-                  test_batch_size = 100,
+                  test_batch_size = 32,
                   test_stride=1)
     elif train == 4:
         train_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("p")]
@@ -289,7 +289,7 @@ def main():
                   test_save_loc = test_loc, 
                   seq_len = seq_len, 
                   model_type = model_type,
-                  test_batch_size = 100,
+                  test_batch_size = 32,
                   test_stride=1)
     elif train == 5:
         val_video_list = [f for f in os.listdir(FRAME_LOC+"val_set") if f.startswith("p")]
@@ -299,18 +299,18 @@ def main():
                   test_save_loc = test_loc, 
                   seq_len = seq_len, 
                   model_type = model_type,
-                  test_batch_size = 100,
+                  test_batch_size = 32,
                   test_stride=1)
     elapsed_time = time.time() - start_time
     print(f"Test finished, elapsed time: {elapsed_time:>6f} s")
     #'''
 
-def train_loop(dataloader, model, loss_fn, optimizer):
+def train_loop(dataloader, model, loss_fn, optimizer, maximum_step = 10000):
     model.train()
     train_loss = AverageMeter()
     train_acc = RateMeter() 
-    with tqdm(dataloader,unit= "batch") as tepoch:
-        for input, target in tepoch:
+    with tqdm(dataloader,unit= "batch",total=maximum_step) as tepoch:
+        for step, (input, target) in enumerate(tepoch):
             input = input.type(torch.cuda.FloatTensor)
             input = Variable(input).cuda()
             target = Variable(target).cuda()
@@ -330,6 +330,9 @@ def train_loop(dataloader, model, loss_fn, optimizer):
             train_loss.update(cur_loss)
             train_acc.update(correct,target.size()[0]*target.size()[1]) 
             tepoch.set_postfix(loss=f"{(cur_loss):>0.6f}", accuracy=f"{(100*cur_acc):>0.1f}%")
+            # Maximum train step per epoch is maximum_step
+            if step >= maximum_step:
+                break
     return train_loss.avg, train_acc.rate
             
 def val_loop(dataloader, model, loss_fn):
