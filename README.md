@@ -2,7 +2,7 @@
 My personal PhD research in Pytorch version
 
 ### Dependencies
-Pytorch=1.8.1 \
+Pytorch=1.9.1 \
 python=3.8.3 \
 opencv-contrib-python==4.2.0.34 \
 opencv-python==4.2.0.34 \
