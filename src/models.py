@@ -93,7 +93,7 @@ class RES_BILSTM(nn.Module):
             encoder_size = 2048
         self.lstm = nn.LSTM(input_size=encoder_size,
                             hidden_size=128,
-                            num_layers=2,
+                            num_layers=1,
                             bidirectional=True,
                             batch_first=True)
         for name, param in self.lstm.named_parameters():
