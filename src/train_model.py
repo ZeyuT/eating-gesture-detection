@@ -17,9 +17,10 @@ from torchinfo import summary
 
 from models import RES_LSTM,RES_BILSTM
 from utils import class_weights,FrameSequenceDataset,AverageMeter,RateMeter,test_model
-from constants import FRAME_LOC,RESULT_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM
-from tqdm.auto import tqdm
-
+from constants import DATA_LOC,RESULT_ROOT_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM
+from tqdm import tqdm
+sys.path.append("../")
+from reimplementation.model_loader import get_model
 def main():   
     '''
     train = 0: tests model (i.e. inference) on test set
@@ -28,6 +29,7 @@ def main():
           = 3: continue training on raw video data and test model
           = 4: inference on train set
           = 5: inference on val set
+          = 6: re-test seq2seq model in seq2one manner on test set
     model_type  = 1: seq2seq frame-wise prediction
                 = 2: seq2one frame prediction
     '''
@@ -48,11 +50,31 @@ def main():
         stride = int(sys.argv[6])
         model_idx = int(sys.argv[7])
         weight_type = 4
-    if network in ["RES_BILSTM","RES_LSTM"]:
+        val_stride = 16
+    if network in ["RES_BILSTM","RES_LSTM","x3d-s"]:
         model_type = 1
     elif network == "CNN3D_Model":
         model_type = 2
 
+    learning_rate = 0.0001
+    decay_rate = 0.9
+    
+    if train == 6:
+        model_type = 2
+        
+    RESULT_LOC = os.path.join(RESULT_ROOT_LOC, f"results_10runs_{network}")
+    if network == "RES_BILSTM":                
+        model = RES_BILSTM(seq_len=seq_len)
+        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_independent_8hz/")
+    elif network == "RES_LSTM":                
+        model = RES_LSTM(seq_len=seq_len)
+        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_independent_8hz/")
+    elif network == "x3d-s":
+        model, _, _, fps, seq_len = get_model(network)
+        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_independent_5hz/")
+    model = torch.nn.DataParallel(model).cuda()
+    #summary(model, input_size=(batch_size,seq_len, CHANNEL, HEIGHT, WIDTH))    
+    
     #v{x}: version x for class weight calculation
     if train == 2:
         print("training models in debug mode\n")
@@ -69,12 +91,15 @@ def main():
         model_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"model_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}")
         if train == 4:
             print("test models on train set \n")
-            test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_train")
+            test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_train")
         elif train == 5:
             print("test models on val set \n")
-            test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_val")
+            test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_val")
+        elif train == 6:
+            print("test models on test set using seq2one manner \n")
+            test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_test_seq2one") 
         else:
-            test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_{network}_{epochs}_{seq_len}_{stride}_v{weight_type}_test") 
+            test_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_test") 
     
     try: 
         os.mkdir(RESULT_LOC)
@@ -108,13 +133,7 @@ def main():
         os.mkdir(os.path.join(test_loc,"frame_features"))
     except:
         pass 
-    
-    if network == "RES_BILSTM":                
-        model = RES_BILSTM(seq_len=seq_len).cuda()
-    elif network == "RES_LSTM":                
-        model = RES_LSTM(seq_len=seq_len).cuda()
-    model = torch.nn.DataParallel(model).cuda()
-    #summary(model, input_size=(batch_size,seq_len, CHANNEL, HEIGHT, WIDTH))     
+     
     if train != 0 and train < 4:      
         print("Preparing dataset...")
         sys.stdout.flush()
@@ -153,7 +172,7 @@ def main():
                         root_path=FRAME_LOC+"val_set/",
                         video_list=val_video_list,
                         seq_len=seq_len,
-                        stride=stride,
+                        stride=val_stride,
                         model_type=model_type,
                         transform=None,
                         test_mode=True
@@ -163,18 +182,17 @@ def main():
                 dataset=train_set,
                 batch_size=batch_size,
                 shuffle=True,
-                num_workers=10,
+                num_workers=16,
                 pin_memory=True
             )  
         val_loader = data.DataLoader(
                 dataset=val_set,
                 batch_size=batch_size,
                 shuffle=False,
-                num_workers=10,
+                num_workers=16,
                 pin_memory=True
             )                
-             
-        log = open(os.path.join(log_loc, "train_log.txt"), 'w')    
+        log = open(os.path.join(log_loc, "train_log.txt"), 'a')    
         print ("=======================Experimental Settings=======================")
         log.write("=======================Experimental Settings=======================\n")
         log.flush()
@@ -211,8 +229,8 @@ def main():
         print("training model...")
         # Initialize the loss function
         loss_fn = nn.CrossEntropyLoss(weight=torch.from_numpy(weights).float().cuda())
-        optimizer = torch.optim.Adam(model.parameters(),lr=0.0001)
-        scheduler = ExponentialLR(optimizer, gamma=0.9)
+        optimizer = torch.optim.Adam(model.parameters(),lr=learning_rate)
+        scheduler = ExponentialLR(optimizer, gamma=decay_rate)
         best_val_uar = 0
         for epoch in range(epochs):
             message = f"Epoch {epoch}   lr: {scheduler.get_last_lr()[0]:>6f}"
@@ -229,10 +247,11 @@ def main():
             log.write(message+ '\n') 
             sys.stdout.flush()  
             log.flush()   
-            torch.save({'model_state_dict': model.state_dict(), 
-                        'epoch': epoch,
-                        'optimizer_state_dict': optimizer.state_dict()
-                        },os.path.join(model_loc, f"checkpoint_{epoch}.tar"))  
+            if (epoch+1) %10 == 0:
+                torch.save({'model_state_dict': model.state_dict(), 
+                            'epoch': epoch,
+                            'optimizer_state_dict': optimizer.state_dict()
+                            },os.path.join(model_loc, f"checkpoint_{epoch}.tar"))  
             if best_val_uar < val_uar:
                 best_val_uar = val_uar
                 message = f"current model is the best; checkpoint saved"
@@ -271,7 +290,7 @@ def main():
                   model_type = model_type,
                   test_batch_size = 32,
                   test_stride=1)
-    elif train < 4:
+    elif train < 4 or train == 6:
         test_video_list = [f for f in os.listdir(FRAME_LOC+"test_set") if f.startswith("p")] 
         test_model(model = model, 
                   test_video_list = test_video_list, 
@@ -309,7 +328,7 @@ def train_loop(dataloader, model, loss_fn, optimizer, maximum_step = 10000):
     model.train()
     train_loss = AverageMeter()
     train_acc = RateMeter() 
-    with tqdm(dataloader,unit= "batch",total=maximum_step) as tepoch:
+    with tqdm(dataloader,unit= "batch",total=maximum_step, leave=False) as tepoch:
         for step, (input, target) in enumerate(tepoch):
             input = input.type(torch.cuda.FloatTensor)
             input = Variable(input).cuda()
