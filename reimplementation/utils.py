@@ -98,10 +98,10 @@ class testDataset(data.Dataset):
             self.video_labels.append(cur_label_idx)
         for i in range(0, len(frame_locs)-seq_len+1, stride):
             self.input_list.append(frame_locs[i:i+seq_len])
-            self.frame_names.append(frame_name_list[i])
+            #self.frame_names.append(frame_name_list[i])
             
         self.video_labels = np.array(self.video_labels)       
-        self.frame_names = np.array(self.frame_names) 
+        self.frame_names = np.array(frame_name_list) 
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -224,11 +224,12 @@ def test_model(model,
                     heat_map[test_stride*seq_idx+frame_idx][pred_list[seq_idx][frame_idx]] += 1
             video_preds = np.argmax(heat_map, axis=-1)
         elif inference_type == 'seq2one':
-            video_preds = np.zeros(len(video_labels))
+            # default pred value is 2, i.e. non-intake
+            video_preds = np.ones(len(video_labels))*2.0
             video_preds[seq_len-1:seq_len-1+len(pred_list)] = pred_list           
         
         '''
-        Save the raw prediction probabililties for visualization
+        Save the raw prediction for visualization
         ''' 
         f_probs = open(os.path.join(test_save_loc,"frame_probs",f"probs_{video_name}.txt"),'w')
         for name, window_prob in zip(frame_names,prob_list):
