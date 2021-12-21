@@ -50,7 +50,7 @@ class probabilityDataset(data.Dataset):
         
         # use features from run_times runs for training
         for model_idx in range(1,run_times+1):
-            feature_loc = os.path.join(data_loc,f"{model_idx}/result_RES_LSTM_30_16_8_v4_{mode}/frame_features/")
+            feature_loc = os.path.join(data_loc,f"{model_idx}/result_{mode}/frame_features/")
             read_samples_args.append([feature_loc,gt_loc,model_idx])
         pool = mp.Pool(10)
         ret = pool.map(self.read_raw_samples,read_samples_args)
@@ -121,8 +121,8 @@ class probabilityDataset(data.Dataset):
             for row_idx, line in enumerate(f_feature.readlines()):
                 seq_features = line.split("\n")[0].split("\t")[1:]
                 for col_idx in range(0,len(seq_features),3):
-                    position_idx = col_idx // 3  # the frame index in the current sequence
-                    frame_idx = row_idx * self.raw_stride + position_idx  # the frame index in the current frame list
+                    position_idx = col_idx // 3  # the frame index in current feature sequence
+                    frame_idx = row_idx * self.raw_stride + position_idx  # the frame index in the video's time span
                     samples[position_idx,frame_idx,0:3] = seq_features[col_idx:col_idx+3]
             frame_gt = np.array([LABEL_TABLE[line.split("\n")[0].split("\t")[1]] for line in gt_content])
             
@@ -150,15 +150,16 @@ class probabilityDataset(data.Dataset):
 class single_LSTM(nn.Module):
     def __init__(self,input_size=3,seq_len=10000,label_num=3):
         super(single_LSTM, self).__init__()
+        # Was using 64 units * 2 layers
         self.lstm = nn.LSTM(input_size=input_size,
                             hidden_size=64,
-                            num_layers=2,
-                            bidirectional=False,
+                            num_layers=1,
+                            bidirectional=True,
                             batch_first=True)
         self.batch_norm = nn.BatchNorm1d(affine=False,
                                           num_features=int(seq_len))
         self.dropout = nn.Dropout(p=0.5)
-        self.fc = nn.Sequential(nn.Linear(64, label_num),
+        self.fc = nn.Sequential(nn.Linear(64*2, label_num),
                                     nn.ReLU())         
         self.act = nn.Softmax(dim=-1)
             
@@ -243,6 +244,8 @@ def test_2nd_stage(model,
                     std,
                     label_type="all",
                     downsample_rate=4, 
+                    raw_sample_len=20000,
+                    raw_seq_len=16,
                     test_stride=1):      
     try:
         os.mkdir(os.path.join(test_save_loc))
@@ -259,7 +262,13 @@ def test_2nd_stage(model,
     
     test_video_list = ["_".join(f.split(".")[0].split("_")[1:3]) for f in os.listdir(data_loc)]
     for video_idx in test_video_list:
-        raw_samples,raw_labels,raw_frame_gt,raw_frame_names = read_features(data_loc,gt_loc,video_idx,label_type)
+        raw_samples,raw_labels,raw_frame_gt,raw_frame_names = read_features(feature_loc=data_loc, 
+                                                                              gt_loc=gt_loc, 
+                                                                              video_idx=video_idx, 
+                                                                              label_type=label_type,
+                                                                              raw_stride=1, 
+                                                                              raw_seq_len=raw_seq_len, 
+                                                                              raw_sample_len=raw_sample_len)
         # Besides of downsampling samples, 
         # also resample in the raw sequence with test_stride*downsample_rate fps. 
         # That is equivalent with applying test_stride stride on the downsampled raw data.  
@@ -331,6 +340,7 @@ def read_features(feature_loc,
     f_feature = open(os.path.join(feature_loc,f"features_{video_idx}.txt"),"r")
     # default sample value is 0, and default label is -1( will be ingored when computing loss)
     if label_type == "all":
+        # Samples dimension: [position_in_window, position_in_new_sample, channel]
         samples = np.zeros((raw_seq_len,raw_sample_len,3)) 
         labels = np.ones((raw_seq_len,raw_sample_len)) * (-1)            
         for row_idx, line in enumerate(f_feature.readlines()):
@@ -350,7 +360,7 @@ def read_features(feature_loc,
             for col_idx in range(0,len(seq_features),3):
                 position_idx = col_idx // 3  # the frame index in the current sequence
                 frame_idx = row_idx * raw_stride + position_idx  # the frame index in the current frame list
-                samples[position_idx,frame_idx] = seq_features[col_idx+target_position]
+                samples[position_idx,frame_idx,0] = seq_features[col_idx+target_position]
                 samples[position_idx,frame_idx,1] = seq_features[col_idx+2]
                 
         frame_gt = np.array(([LABEL_TABLE[line.split("\n")[0].split("\t")[1]] for line in gt_content]))
@@ -366,15 +376,13 @@ def main():
 
     train = int(sys.argv[1])
     label_type = sys.argv[2]
-    network = sys.argv[3]
+    first_network = sys.argv[3]
+    network = sys.argv[4]
     batch_size = 32
-    downsample_rate = 4
-    raw_sample_len = 20000
-    raw_seq_len = 16
-    sample_len = int(raw_sample_len/downsample_rate)
+
     epochs = 50
     weight_type = 4
-    stride = 8
+    
     global model_label_num
     if label_type in ["bite","drink"]:
         model_label_num = 2
@@ -382,10 +390,35 @@ def main():
     else:
         model_label_num = 3
         input_size = 3
+    learning_rate = 0.001
+    decay_rate = 0.9
+    if first_network == 'RES_BILSTM':
+        data_loc = f"/scratch1/zeyut/eat_detection/results_10runs_RES_BILSTM/"
+        fps = 8
+        downsample_rate = fps // 2 # i.e. downsample to 2 hz
+        raw_sample_len = 20000 # 20000/8 = 2500 s
+        raw_seq_len = 16
+        sample_len = int(raw_sample_len/downsample_rate)
+
+    elif first_network == 'RES_LSTM':
+        data_loc = "/scratch1/zeyut/eat_detection/results_10runs_2unidirectional_ltsm/"
+        fps = 8
+        downsample_rate = fps // 2 # i.e. downsample to 2 hz
+        raw_sample_len = 20000 # 20000/8 = 2500 s
+        raw_seq_len = 16
+        sample_len = int(raw_sample_len/downsample_rate)
         
-    log_loc = f"log_{network}_{epochs}_{raw_seq_len}_{stride}_v{weight_type}_2stage_{label_type}"
-    model_loc = f"model_{network}_{epochs}_{raw_seq_len}_{stride}_v{weight_type}_2stage_{label_type}"
-    test_loc = f"result_{network}_{epochs}_{raw_seq_len}_{stride}_v{weight_type}_2stage_{label_type}"    
+    elif first_network == 'x3d-s':
+        data_loc = "/scratch1/zeyut/eat_detection/results_10runs_x3d-s/"    
+        fps = 5
+        downsample_rate = fps // 2 # i.e. downsample to 2 hz (2.5hz actually)
+        raw_sample_len = 12500 # 2500 (s) * 5
+        raw_seq_len = 13
+        sample_len = int(raw_sample_len/downsample_rate)
+        
+    log_loc = f"log_{network}_{first_network}_{raw_seq_len}_2stage_{label_type}"
+    model_loc = f"model_{network}_{first_network}_{raw_seq_len}_2stage_{label_type}"
+    test_loc = f"result_{network}_{first_network}_{raw_seq_len}_2stage_{label_type}"    
     
     if train == 1:
         print("training models in normal mode\n")
@@ -405,11 +438,10 @@ def main():
     except:
         pass 
     
-    if network == "single_lstm":
-        model = single_LSTM(input_size=input_size,seq_len=sample_len,label_num=model_label_num).cuda()
-    elif network == "double_lstm":
+    if network == "double_lstm":
         model = double_LSTM(input_size=input_size,seq_len=sample_len,label_num=model_label_num).cuda()
-
+    else:
+        model = single_LSTM(input_size=input_size,seq_len=sample_len,label_num=model_label_num).cuda()
     model = torch.nn.DataParallel(model).cuda()
     #summary(model, input_size=(batch_size,seq_len, CHANNEL, HEIGHT, WIDTH))  
 
@@ -418,8 +450,8 @@ def main():
         sys.stdout.flush()
         start_time = time.time()
         train_set = probabilityDataset(
-                    data_loc = "/scratch1/zeyut/eat_detection/results_10runs/",
-                    gt_loc = "/scratch1/zeyut/eat_detection/all_labels/",
+                    data_loc = data_loc,
+                    gt_loc = f"/scratch1/zeyut/eat_detection/VideoData_independent_{fps}hz/train_set/",
                     mode = "train",
                     label_type = label_type,
                     run_times = 10,
@@ -435,8 +467,8 @@ def main():
         sys.stdout.flush()      
         start_time = time.time()   
         val_set = probabilityDataset(
-                    data_loc = "/scratch1/zeyut/eat_detection/results_10runs/",
-                    gt_loc = "/scratch1/zeyut/eat_detection/all_labels/",
+                    data_loc = data_loc,
+                    gt_loc = f"/scratch1/zeyut/eat_detection/VideoData_independent_{fps}hz/val_set/",
                     mode = "val",
                     label_type = label_type,
                     run_times = 10,
@@ -471,8 +503,9 @@ def main():
         message = f"train second stage model\n"\
                   f"started at {start_time}\n"\
                   f"available GPU: {available_gpu}\n"\
+                  f"first stage model: {first_network}\n" \
                   f"model: {network}\n" \
-                  f"label type: {label_type}\n"\
+                  f"label type: {label_type}\n" \
                   f"batch size: {batch_size}  epochs: {epochs}\n"\
                   f"sample length: {sample_len}  downsample rate: {downsample_rate}\n"\
                   f"weight_type: {weight_type}"
@@ -501,8 +534,8 @@ def main():
         # Initialize the loss function
         loss_fn = nn.CrossEntropyLoss(weight=torch.from_numpy(weights).float().cuda(),
                                       ignore_index=-1)
-        optimizer = torch.optim.Adam(model.parameters(),lr=0.001)
-        scheduler = ExponentialLR(optimizer, gamma=0.9)
+        optimizer = torch.optim.Adam(model.parameters(),lr=learning_rate)
+        scheduler = ExponentialLR(optimizer, gamma=decay_rate)
         best_val_uar = 0
         for epoch in range(epochs):
             message = f"Epoch {epoch}   lr: {scheduler.get_last_lr()[0]:>6f}"
@@ -543,7 +576,8 @@ def main():
     try:
         checkpoint = torch.load(os.path.join(model_loc, f"checkpoint_best.tar"))
     except:
-        print("no 'checkpoint_best.tar' is found")
+        print("no 'checkpoint_best.tar' is found in")
+        print(model_loc)
         exit(0)
     model.load_state_dict(checkpoint['model_state_dict'])
            
@@ -551,18 +585,20 @@ def main():
     start_time = time.time()
     sys.stdout.flush()
    
-    mean_list = np.loadtxt(f"/scratch1/zeyut/eat_detection/results_10runs/train_mean_{label_type}.txt")
-    std_list = np.loadtxt(f"/scratch1/zeyut/eat_detection/results_10runs/train_std_{label_type}.txt")
+    mean_list = np.loadtxt(os.path.join(data_loc,f"train_mean_{label_type}.txt"))
+    std_list = np.loadtxt(os.path.join(data_loc,f"train_std_{label_type}.txt"))
     
     for model_idx in range(1,11):
         test_2nd_stage(model = model,
-                        data_loc = f"/scratch1/zeyut/eat_detection/results_10runs/{model_idx}/result_RES_LSTM_30_16_8_v4_test/frame_features/", 
-                        gt_loc = "/scratch1/zeyut/eat_detection/all_labels/",
+                        data_loc = os.path.join(data_loc,f"{model_idx}/result_test/frame_features/"), 
+                        gt_loc = f"/scratch1/zeyut/eat_detection/VideoData_independent_{fps}hz/test_set/",
                         test_save_loc = os.path.join(test_loc,f"{model_idx}"),
                         mean = mean_list[model_idx-1],
                         std = std_list[model_idx-1],
                         label_type = label_type,
                         downsample_rate = downsample_rate, 
+                        raw_sample_len = raw_sample_len,
+                        raw_seq_len = raw_seq_len,
                         test_stride = 1)       
     elapsed_time = time.time() - start_time
     print(f"Test finished, elapsed time: {elapsed_time:>6f} s")
