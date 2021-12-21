@@ -1,11 +1,12 @@
 RAW_DATA_LOC = "/home/zeyut/eat_detection/CafeteriaData/"
-FRAME_LOC = "/scratch1/zeyut/eat_detection/VideoData_independent_8hz/"
-RESULT_LOC = "/scratch1/zeyut/eat_detection/results/"
+DATA_LOC = "/scratch1/zeyut/eat_detection/"
+RESULT_ROOT_LOC = "/scratch1/zeyut/eat_detection/"
 WIDTH = 224
 HEIGHT = 224
 CHANNEL = 3
 LABEL_NUM = 3
 LABEL_TABLE = {"bite": 0, "drink": 1, "non_intake": 2}
-IMAGE_SIZES = {8: [224,224], 6: [312,312], 16: [224,224]}
+IMAGE_SIZES = {5: [160,160], 8: [224,224], 6: [312,312], 16: [224,224]}
 MEAN = [1.80444053, 0.80193992, 11.10639638]
 STD = [4.21282851, 3.02531022, 5.59236825]
+
