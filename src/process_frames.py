@@ -33,7 +33,7 @@ def process_frames(args):
     
     frame_names = [f for f in os.listdir(video_frame_loc) if f.endswith('.ppm')]
     frame_names.sort(reverse=False)
-    timestamp = 0
+    timestamp = 0.0
     gesture_idx = 0
     end_timestamp = gesture_ends[0]
     f_gt_frame = open(os.path.join(frame_save_loc,'gt_frame_3labels.txt'),'w')
@@ -42,15 +42,15 @@ def process_frames(args):
     for frame_name in frame_names:
         # give up those frames captured before the meal started (before the first labeled gesture)
         if timestamp < gesture_starts[0]:
-            timestamp += int(1000.0 / fps)
+            timestamp += 1000.0 / fps
             continue
         # give up those frames captured after the meal ended (after the last labeled gesture)
         if timestamp > gesture_ends[-1]:
-            timestamp += int(1000.0 / fps)
+            timestamp += 1000.0 / fps
             continue
         
         # update gesture idx to the current time step
-        while timestamp > end_timestamp + int(1 / 15 * 1000 / 2):
+        while timestamp > end_timestamp + int(1 / 15.0 * 1000 / 2):
             # (1 / 15 * 1000) is the gt's resolution in ms. 
             # '+ int(1 / 15 * 1000 / 2)' lets the current timestamp belong to the closest gesture
             gesture_idx += 1
@@ -60,15 +60,15 @@ def process_frames(args):
         #output_name = 'frame_{:06d}.ppm'.format(frameNo)
         output_name = frame_name[4:]
         f_gt_frame.write(output_name + '\t' + gesture_types[gesture_idx] + '\n')
-
-        # crop and resize frames, and replace in place
+        
+        # crop and resize frames
         frame = cv2.imread(os.path.join(video_frame_loc,frame_name), cv2.IMREAD_UNCHANGED)
         crop = frame[window_loc[1]:window_loc[3],window_loc[0]:window_loc[2],:]
         crop = cv2.resize(crop,(WIDTH,HEIGHT))
         cv2.imwrite(os.path.join(frame_save_loc,output_name), crop.astype(int))
-
+        
         frameNo += 1
-        timestamp += int(1000.0 / fps)        
+        timestamp += 1000.0 / fps        
   
     print('{} finished: processed {} images'.format(video_frame_loc,frameNo-1))
     sys.stdout.flush()
@@ -263,7 +263,7 @@ if __name__ == '__main__':
         os.mkdir(FRAME_LOC)
     except:
         pass
-    """
+    
     f_filelist = open(os.path.join(RAW_DATA_LOC,'DATA_FILENAMES.txt'),'r')
     f_windows = open(os.path.join(RAW_DATA_LOC,'window_loc.txt'),'r')
     windowlists = f_windows.readlines()
@@ -327,12 +327,12 @@ if __name__ == '__main__':
             break
         '''
 
-    pool = mp.Pool(40)
+    pool = mp.Pool(20)
     results = pool.map(process_frames,process_frames_args)    
     print(f'new bites& drink frames: {(np.sum(results,axis=0)*8/1000).astype(int)}')    
     pool.close()  
     pool.join()                
-    """
+    
     '''
     Split training, validataion, testing set, with ratio being 0.7:0.15:0.15
     '''

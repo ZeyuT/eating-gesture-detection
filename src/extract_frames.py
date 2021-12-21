@@ -7,7 +7,7 @@ import multiprocessing as mp
 from constants import DATA_LOC,RAW_DATA_LOC
 
 def ConvertMsecFormat(msec):
-    return "{:02d}:{:02d}:{:02d}".format(int(msec/(60*60*1000)),int(msec%(60*60*1000)/(60*1000)),int(msec%(60*1000)/(1000)))
+    return "{:02d}:{:02d}:{:.4f}".format(int(msec/(60*60*1000)),int(msec%(60*60*1000)/(60*1000)),msec%(60*1000)/1000)
 
 def extract_raw_frames(args):
     curVideoPath,frame_save_loc, fps = args[0],args[1],args[2]
@@ -22,14 +22,19 @@ def extract_raw_frames(args):
     # ffmpeg outputs duration in second, then convert it to ms
     duration = float(response.decode('ascii').split("\n")[0]) *1000 
     frameCount = 1
-    for timestamp in range(0,int(duration),int(1000/fps)):
-        query = "ffmpeg -y -ss {} -i {} -frames:v 1 -v quiet {}/raw_frame_{:06d}.ppm".\
-                  format(ConvertMsecFormat(timestamp),
+    timestamp = 0.0
+    while timestamp < duration:
+        # -y: overwrite existing files without asking
+        # -ss: seek to the timestamp
+        query = "ffmpeg -y -ss {}ms -i {} -frames:v 1 -v quiet {}/raw_frame_{:06d}.ppm".\
+                  format(int(timestamp),
                   curVideoPath,
                   frame_save_loc,
                   frameCount)
         response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
         frameCount += 1
+        timestamp += 1000/fps
+        
     return frameCount
   
 if __name__ == "__main__": 
@@ -95,7 +100,7 @@ if __name__ == "__main__":
    			   break
         '''
     # load video file
-    pool = mp.Pool(40)
+    pool = mp.Pool(20)
     ret = pool.map(extract_raw_frames,extract_frames_args)
     pool.close()  
     pool.join()                            
