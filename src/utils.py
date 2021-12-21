@@ -7,7 +7,7 @@ import torchvision
 import torchvision.transforms as transforms
 from PIL import Image
 from torch.autograd import Variable
-from constants import FRAME_LOC,WIDTH,HEIGHT,CHANNEL,LABEL_NUM, LABEL_TABLE
+from constants import WIDTH,HEIGHT,CHANNEL,LABEL_NUM, LABEL_TABLE
 from tqdm import tqdm
 import math
 def class_weights(label_list, weight_type):
@@ -135,9 +135,9 @@ class testDataset(data.Dataset):
             self.video_labels.append(cur_label_idx)
         for i in range(0, len(frame_locs)-seq_len+1, stride):
             self.input_list.append(frame_locs[i:i+seq_len])
-            self.frame_names.append(frame_name_list[i])
+            #self.frame_names.append(frame_name_list[i])
         self.video_labels = np.array(self.video_labels)       
-        self.frame_names = np.array(self.frame_names) 
+        self.frame_names = np.array(frame_name_list[::stride]) 
             
 def denormalize(video_tensor):
     """
@@ -253,7 +253,10 @@ def test_model(model,
                     input = input.type(torch.cuda.FloatTensor)
                     input = Variable(input).cuda()
                     output,fc_output = model(input)
-                    cur_prob = output.detach().cpu().numpy()
+                    if model_type == 2:
+                        cur_prob = output.detach().cpu().numpy()[:,-1,:]
+                    else:
+                        cur_prob = output.detach().cpu().numpy()
                     cur_feature = fc_output.detach().cpu().numpy()
                     pred_list.append(cur_prob.argmax(-1))
                     prob_list.append(cur_prob)
@@ -270,13 +273,17 @@ def test_model(model,
                     heat_map[test_stride*seq_idx+frame_idx][pred_list[seq_idx][frame_idx]] += 1
             video_preds = np.argmax(heat_map, axis=-1)
         elif model_type == 2:
-            video_preds = np.zeros(len(video_labels))
+            # default pred value is 2, i.e. non-intake
+            video_preds = np.ones(len(video_labels))*2.0
             video_preds[seq_len-1:seq_len-1+len(pred_list)] = pred_list   
         '''  
         Save the features for 2nd stage model training
         ''' 
         f_features = open(os.path.join(test_save_loc,"frame_features",f"features_{video_name}.txt"),'w')
         for name, window_feature in zip(frame_names,feature_list):
+            # len(feature_list) < len(frame_names), therefore
+            # zip(frame_names,prob_list) disgards the non-first frames in the last window.
+            # Same thing in the following cases.
             #saved frame's indexes start from 0
             f_features.write("{}".format(name))
             for feature_value in window_feature.flatten():
