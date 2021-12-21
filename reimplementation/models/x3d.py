@@ -2,18 +2,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from . import fb_models
+from reimplementation.models import fb_models
+
 def generate_model(config_path, weights_path,network):
     model = fb_models.X3D(config_path)    
     ckpt = torch.load(weights_path)
     model.load_state_dict(ckpt['model_state'])
-    if network == 'x3d-m':
+    if network == 'x3d-s':
+        #x3d-s is used for frame-wise prediction
         model.head = X3DAlterHead(dim_in=192,
                                 dim_inner=432,
                                 dim_out=2048,
                                 num_classes=3,
                                 pool_size=[13, 5, 5],
-                                dropout_rate=0.5)
+                                dropout_rate=0.5,
+                                task='loc')
     elif network == 'x3d-m':
         model.head = X3DAlterHead(dim_in=192,
                                 dim_inner=432,
@@ -56,6 +59,7 @@ class X3DAlterHead(nn.Module):
         bn_mmt=0.1,
         norm_module=nn.BatchNorm3d,
         bn_lin5_on=False,
+        task='class'
     ):
         """
         The `__init__` method of any subclass should also contain these
@@ -90,8 +94,10 @@ class X3DAlterHead(nn.Module):
         self.bn_mmt = bn_mmt
         self.inplace_relu = inplace_relu
         self.bn_lin5_on = bn_lin5_on
-        self._construct_head(dim_in, dim_inner, dim_out, norm_module)
+        self.task = task
 
+        self._construct_head(dim_in, dim_inner, dim_out, norm_module)
+        
     def _construct_head(self, dim_in, dim_inner, dim_out, norm_module):
 
         self.conv_5 = nn.Conv3d(
@@ -108,10 +114,13 @@ class X3DAlterHead(nn.Module):
         self.conv_5_relu = nn.ReLU(self.inplace_relu)
 
         if self.pool_size is None:
-            self.avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+            self.avg_pool = nn.AvgPool3d((1, 1, 1))
         else:
-            self.avg_pool = nn.AvgPool3d(self.pool_size, stride=1)
-
+            if self.task == 'class':
+                self.avg_pool = nn.AvgPool3d(self.pool_size, stride=1)
+            elif self.task == 'loc':
+                self.avg_pool = nn.AvgPool3d((1,self.pool_size[1],self.pool_size[2]), stride=1)
+                
         self.lin_5 = nn.Conv3d(
             dim_inner,
             dim_out,
@@ -163,7 +172,15 @@ class X3DAlterHead(nn.Module):
         if hasattr(self, "dropout"):
             x = self.dropout(x)
         x = self.projection(x)
+        
+        if self.task == 'class':
+            x = self.act(x)
+            x = x.view(x.shape[0], -1)
+            return x
+        elif self.task == 'loc':
+            fc_output = x 
+            x = self.act(x)
+            x = x.view(x.shape[0],x.shape[1], -1)
+            fc_output = fc_output.view(fc_output.shape[0],fc_output.shape[1], -1)
+            return x,fc_output
 
-        x = self.act(x)
-        x = x.view(x.shape[0], -1)
-        return x

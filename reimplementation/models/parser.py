@@ -5,7 +5,7 @@
 
 import argparse
 import sys
-from models.defaults import get_cfg
+from reimplementation.models.helpers.defaults import get_cfg
 
 from os.path import exists
 

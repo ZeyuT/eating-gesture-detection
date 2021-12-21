@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from . import fb_models
+from reimplementation.models import fb_models
 
 def generate_model(config_path, weights_path,network='slowfast-r50'):
     model = fb_models.SlowFast(config_path)    

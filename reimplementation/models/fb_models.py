@@ -8,10 +8,10 @@ import torch
 import torch.nn as nn
 from torch.nn.init import trunc_normal_
 
-from .helper.batchnorm_helper import get_norm
+from reimplementation.models.helper.batchnorm_helper import get_norm
 
-from .helper import weight_init_helper as init_helper
-from .helper import head_helper, resnet_helper, stem_helper, defaults
+from reimplementation.models.helper import weight_init_helper as init_helper
+from reimplementation.models.helper import head_helper, resnet_helper, stem_helper, defaults
 
 try:
     from fairscale.nn.checkpoint import checkpoint_wrapper
