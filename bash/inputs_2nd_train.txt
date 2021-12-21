@@ -1,6 +1,2 @@
-1 bite single_lstm
-1 drink single_lstm
-1 all single_lstm
-1 bite double_lstm
-1 drink double_lstm
-1 all double_lstm
+1 all RES_LSTM single_lstm
+1 all RES_LSTM double_lstm

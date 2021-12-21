@@ -15,6 +15,9 @@ source activate torch-1.8
 
 cd /scratch1/zeyut/eat_detection
 
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/model_loader.py /scratch1/zeyut/eat_detection/reimplementation/
+cp -r /home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/models/ /scratch1/zeyut/eat_detection/reimplementation/
+
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/train_model.py /scratch1/zeyut/eat_detection
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/models.py /scratch1/zeyut/eat_detection
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/utils.py /scratch1/zeyut/eat_detection

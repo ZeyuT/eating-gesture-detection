@@ -5,7 +5,7 @@
 #PBS -e /home/zeyut/eat_detection/workspace/job_output
 #PBS -o /home/zeyut/eat_detection/workspace/job_output
 #PBS -j oe
-#PBS -J 1-6
+# #PBS -J 1-2
 
 
 module load cuda/10.2.89-gcc/8.3.1
@@ -21,9 +21,11 @@ cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/utils.py /sc
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/constants.py /scratch1/zeyut/eat_detection
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/bash/inputs_2nd_train.txt /scratch1/zeyut/eat_detection
 
-inputs=( $(sed -n ${PBS_ARRAY_INDEX}p inputs_2nd_train.txt) )
+#inputs=( $(sed -n ${PBS_ARRAY_INDEX}p inputs_2nd_train.txt) )
 
-python ./train_2nd_model.py ${inputs[0]} ${inputs[1]} ${inputs[2]}
+#python ./train_2nd_model.py ${inputs[0]} ${inputs[1]} ${inputs[2]} ${inputs[3]}
+
+python ./train_2nd_model.py 1 all x3d-s single_lstm
 
 
 

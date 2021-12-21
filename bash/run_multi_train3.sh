@@ -22,9 +22,10 @@ cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/train_model.
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/models.py /scratch1/zeyut/eat_detection
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/utils.py /scratch1/zeyut/eat_detection
 cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/src/constants.py /scratch1/zeyut/eat_detection
-cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/bash/inputs_multi_train2.txt /scratch1/zeyut/eat_detection
+cp /home/zeyut/eat_detection/workspace/eating-gesture-detection/bash/inputs_multi_train3.txt /scratch1/zeyut/eat_detection
 
-inputs=( $(sed -n ${PBS_ARRAY_INDEX}p inputs_multi_train2.txt) )
+inputs=( $(sed -n ${PBS_ARRAY_INDEX}p inputs_multi_train3.txt) )
 
 python ./train_model.py ${inputs[0]} ${inputs[1]} ${inputs[2]} ${inputs[3]} ${inputs[4]} ${inputs[5]} ${inputs[6]}
+
 
