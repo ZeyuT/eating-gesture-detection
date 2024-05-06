@@ -18,7 +18,7 @@ from torchinfo import summary
 
 from models import RES_LSTM,RES_BILSTM
 from utils import class_weights,FrameSequenceDataset,AverageMeter,RateMeter,test_model
-from constants import DATA_LOC,RESULT_ROOT_LOC,IMAGE_SIZES,CHANNEL,LABEL_NUM
+from constants import DATA_LOC,RESULT_ROOT_LOC,CHANNEL,LABEL_NUM
 from tqdm import tqdm
 sys.path.append("../")
 from reimplementation.model_loader import get_model
@@ -50,8 +50,8 @@ def main():
         seq_len = int(sys.argv[5])
         stride = int(sys.argv[6])
         model_idx = int(sys.argv[7])
-        weight_type = 4
-        val_stride = 16
+        weight_type = 3
+        val_stride = 2
     if network in ["RES_BILSTM","RES_LSTM","x3d-s"]:
         model_type = 1
     elif network == "CNN3D_Model":
@@ -66,18 +66,14 @@ def main():
     RESULT_LOC = os.path.join(RESULT_ROOT_LOC, f"results_10runs_{network}")
     if network == "RES_BILSTM":                
         model = RES_BILSTM(seq_len=seq_len)
-        fps = 8
-        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_independent_8hz/")
+        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_eatSense_8hz/")
     elif network == "RES_LSTM":                
         model = RES_LSTM(seq_len=seq_len)
-        fps = 8
-        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_independent_8hz/")
+        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_eatSense_8hz/")
     elif network == "x3d-s":
         model, _, _, fps, seq_len = get_model(network)
-        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_independent_5hz/")
+        FRAME_LOC = os.path.join(DATA_LOC, "VideoData_eatSense_5hz/")
     model = torch.nn.DataParallel(model).cuda()
-    WIDTH,HEIGHT = IMAGE_SIZES[fps]
-    #summary(model, input_size=(batch_size,seq_len, CHANNEL, HEIGHT, WIDTH))    
     
     #v{x}: version x for class weight calculation
     if train == 2:
@@ -125,8 +121,8 @@ def main():
     if train != 0 and train < 4:      
         print("Preparing dataset...")
         sys.stdout.flush()
-        train_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("p")]
-        val_video_list = [f for f in os.listdir(FRAME_LOC+"val_set") if f.startswith("p")]
+        train_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("202")]
+        val_video_list = [f for f in os.listdir(FRAME_LOC+"val_set") if f.startswith("202")]
         
         preprocess = transforms.Compose([
                     transforms.RandomHorizontalFlip(p=0.5), 
@@ -226,7 +222,7 @@ def main():
             print(message)
             sys.stdout.flush() 
             log.write(message+ '\n') 
-            train_loss, train_acc = train_loop(train_loader, model, loss_fn, optimizer, 10000)
+            train_loss, train_acc = train_loop(train_loader, model, loss_fn, optimizer, 3000)
             epoch_time = time.time() - start_time
             start_time = time.time()
             print("validating...") 
@@ -277,7 +273,7 @@ def main():
     if train == 1:
         # Test and encode training set
         test_model(model = model, 
-                  test_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("p")], 
+                  test_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("202")], 
                   root_path = os.path.join(FRAME_LOC,"train_set/"),
                   test_save_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_train"), 
                   seq_len = seq_len, 
@@ -286,7 +282,7 @@ def main():
                   test_stride=1)
         # Test and encode test set
         test_model(model = model, 
-                  test_video_list = [f for f in os.listdir(FRAME_LOC+"test_set") if f.startswith("p")], 
+                  test_video_list = [f for f in os.listdir(FRAME_LOC+"test_set") if f.startswith("202")], 
                   root_path = os.path.join(FRAME_LOC,"test_set/"),
                   test_save_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_test"), 
                   seq_len = seq_len, 
@@ -295,7 +291,7 @@ def main():
                   test_stride=1)
         # Test and encode val set
         test_model(model = model, 
-                  test_video_list = [f for f in os.listdir(FRAME_LOC+"val_set") if f.startswith("p")], 
+                  test_video_list = [f for f in os.listdir(FRAME_LOC+"val_set") if f.startswith("202")], 
                   root_path = os.path.join(FRAME_LOC,"val_set/"),
                   test_save_loc = os.path.join(RESULT_LOC,f"{model_idx}",f"result_val"), 
                   seq_len = seq_len, 
@@ -303,7 +299,7 @@ def main():
                   test_batch_size = 32,
                   test_stride=1)
     elif train == 2:
-        train_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("p")]
+        train_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("202")]
         test_model(model = model, 
                   test_video_list = train_video_list, 
                   root_path = os.path.join(FRAME_LOC,"train_set/"),
@@ -313,7 +309,7 @@ def main():
                   test_batch_size = 32,
                   test_stride=1)
     elif train < 4 or train == 6:
-        test_video_list = [f for f in os.listdir(FRAME_LOC+"test_set") if f.startswith("p")] 
+        test_video_list = [f for f in os.listdir(FRAME_LOC+"test_set") if f.startswith("202")] 
         test_model(model = model, 
                   test_video_list = test_video_list, 
                   root_path = os.path.join(FRAME_LOC,"test_set/"),
@@ -323,7 +319,7 @@ def main():
                   test_batch_size = 32,
                   test_stride=1)
     elif train == 4:
-        train_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("p")]
+        train_video_list = [f for f in os.listdir(FRAME_LOC+"train_set") if f.startswith("202")]
         test_model(model = model, 
                   test_video_list = train_video_list, 
                   root_path = os.path.join(FRAME_LOC,"train_set/"),
@@ -333,7 +329,7 @@ def main():
                   test_batch_size = 32,
                   test_stride=1)
     elif train == 5:
-        val_video_list = [f for f in os.listdir(FRAME_LOC+"val_set") if f.startswith("p")]
+        val_video_list = [f for f in os.listdir(FRAME_LOC+"val_set") if f.startswith("202")]
         test_model(model = model, 
                   test_video_list = val_video_list, 
                   root_path = os.path.join(FRAME_LOC,"val_set/"),

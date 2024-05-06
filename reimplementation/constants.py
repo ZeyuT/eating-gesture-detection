@@ -1,6 +1,6 @@
 RAW_DATA_LOC = "/home/zeyut/eat_detection/CafeteriaData/"
 DATA_LOC = "/scratch1/zeyut/eat_detection/"
-RESULT_LOC = "/scratch1/zeyut/eat_detection/reimplementation/results/"
+RESULT_LOC = "/zfs/mhealth/zeyut/eat_detection/"
 WIDTH = 224
 HEIGHT = 224
 CHANNEL = 3

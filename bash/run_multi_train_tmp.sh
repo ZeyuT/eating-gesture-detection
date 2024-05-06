@@ -5,7 +5,6 @@
 #PBS -e /home/zeyut/meta/workspace/job_output
 #PBS -o /home/zeyut/meta/workspace/job_output
 #PBS -j oe
-#PBS -J 1-3
 
 module load anaconda3/2022.05-gcc/9.5.0
 module load ffmpeg/4.4.1-gcc/9.5.0
@@ -13,7 +12,6 @@ source activate torch-1.13
 
 cd /home/zeyut/meta/workspace/eating-gesture-detection/src
 
-inputs=( $(sed -n ${PBS_ARRAY_INDEX}p ../bash/inputs_multi_train2.txt) )
 
-python ./train_model.py ${inputs[0]} ${inputs[1]} ${inputs[2]} ${inputs[3]} ${inputs[4]} ${inputs[5]} ${inputs[6]}
+python ./train_model.py 1 8 50 RES_BILSTM 16 8 5
 

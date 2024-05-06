@@ -5,17 +5,23 @@ import numpy as np
 import cv2
 from collections import defaultdict
 import multiprocessing as mp
+
+sys.path.append('../')
+sys.path.append('./src/')
+
 from constants import IMAGE_SIZES,DATA_LOC,RAW_DATA_LOC
+import gc
+
 
 # version 1
 PRE_INTAKE_DURATION = {'bite':1000,'drink':2067} # in ms
 AFTER_INTAKE_DURATION = {'bite':1067,'drink':3200} # in ms
-MAX_VIDEO = 1000
     
 def process_frames(args): 
     window_loc,video_frame_loc,frame_save_loc,gt_path,video_sync_offset,fps = \
     args[0],args[1],args[2],args[3],args[4],args[5]  
-
+    
+    WIDTH,HEIGHT = IMAGE_SIZES[fps]
     if not os.path.exists(frame_save_loc):
         os.makedirs(frame_save_loc)
             
@@ -27,7 +33,7 @@ def process_frames(args):
     
     # write gesture-wise gt to file. Only write intake gestures' boundaries  
     f_gt_ges = open(os.path.join(frame_save_loc,'gt_ges_3labels.txt'),'w')
-    f_gt_ges.write('\n'.join(['{}\t{}\t{}'.format(ges_type,round(start*fps/1000),round(end*fps/1000)) \
+    f_gt_ges.write('\n'.join(['{}\t{}\t{}'.format(ges_type,round(start*fps/1000.),round(end*fps/1000.)) \
                   for ges_type,start,end in (zip(gesture_types,gesture_starts,gesture_ends)) if ges_type != 'non_intake']))
     f_gt_ges.close()
     
@@ -63,16 +69,22 @@ def process_frames(args):
         
         # crop and resize frames
         frame = cv2.imread(os.path.join(video_frame_loc,frame_name), cv2.IMREAD_UNCHANGED)
-        crop = frame[window_loc[1]:window_loc[3],window_loc[0]:window_loc[2],:]
-        crop = cv2.resize(crop,(WIDTH,HEIGHT))
-        cv2.imwrite(os.path.join(frame_save_loc,output_name), crop.astype(int))
-        
+        frame = frame[window_loc[1]:window_loc[3],window_loc[0]:window_loc[2],:]
+        frame = cv2.resize(frame,(WIDTH,HEIGHT))
+        cv2.imwrite(os.path.join(frame_save_loc,output_name), frame.astype(int))
+        # del frame
+        gc.collect() 
         frameNo += 1
         timestamp += 1000.0 / fps        
-  
+        
+        
     print('{} finished: processed {} images'.format(video_frame_loc,frameNo-1))
     sys.stdout.flush()
     f_gt_frame.close()
+    
+    del gesture_starts, gesture_ends, gesture_types
+    del f_gt_ges, frame_name, frame_names, output_name, f_gt_frame
+    gc.collect() 
       
     return list(added_ges_durations.values())
     
@@ -241,6 +253,7 @@ def load_gt(gesture_gt_loc,intake_gt_loc,video_sync_offset):
         pre_end = cur_end
          
     f_gt.close()
+    gc.collect() 
     return gesture_starts, gesture_ends, gesture_types, added_ges_durations
 
 def move_subject_videos(subject_name, target_loc):        
@@ -249,18 +262,26 @@ def move_subject_videos(subject_name, target_loc):
 
 def move_video(source_loc,target_loc):
     query = 'mv {} {}'.format(source_loc,target_loc)
-    response = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE).stdout.read()
-                                           
+    popen = subprocess.Popen(query, shell=True, stdout=subprocess.PIPE)
+    response = popen.stdout.read()
+    popen.terminate()
+    
 if __name__ == '__main__': 
     fps = int(sys.argv[1])
     subject_independent = int(sys.argv[2])
 
-    global WIDTH, HEIGHT, RAW_FRAME_LOC, FRAME_LOC
+    global WIDTH, HEIGHT, RAW_FRAME_LOC, FRAME_LOC, SPLIT_LIST_LOC
     WIDTH,HEIGHT = IMAGE_SIZES[fps]
     RAW_FRAME_LOC = os.path.join(DATA_LOC, f'VideoData_rawFrames_{fps}hz/')  
     FRAME_LOC = os.path.join(DATA_LOC, f'VideoData_independent_{fps}hz/')  
+    SPLIT_LIST_LOC = './dataset_split_record/'
+    
     try:
         os.mkdir(FRAME_LOC)
+    except:
+        pass
+    try:
+        mp.set_start_method('forkserver')
     except:
         pass
     
@@ -281,8 +302,7 @@ if __name__ == '__main__':
         test_list = [f for f in os.listdir(os.path.join(FRAME_LOC,'test_set')) if f.startswith('p')]
     else:
         dataset_exist = False
-    #filelists = ['p352/c3/20120503175729964.txt']
-
+        
     process_frames_args = []
     for file_loc in filelists:
         syncfile_loc = os.path.join(RAW_DATA_LOC,str.split(file_loc,'.')[0] + '_sync.txt')
@@ -311,7 +331,7 @@ if __name__ == '__main__':
             if str.split(line,'\t')[0] == '/'.join(str.split(file_loc,'/')[0:-1]):
                 window_loc = list(map(int,str.split(str.split(line,'\t')[1],' ')[0:4]))
         if len(window_loc) == 0:
-            continue;
+            continue
             
         process_frames_args.append([window_loc, 
                                     video_frame_loc, 
@@ -323,16 +343,21 @@ if __name__ == '__main__':
         video_num += 1
         # stop condition for debugging
         '''
-        if video_num >= MAX_VIDEO:
+        if video_num >= 10:
             break
         '''
-
-    pool = mp.Pool(20)
+    results = []
+    # for args in process_frames_args:
+    #     results.append(process_frames(args))
+    #     gc.collect()
+    # Parallelize the process_frames for loop
+    pool = mp.Pool(mp.cpu_count()-2)
     results = pool.map(process_frames,process_frames_args)    
-    print(f'new bites& drink frames: {(np.sum(results,axis=0)*8/1000).astype(int)}')    
     pool.close()  
     pool.join()                
-    
+ 
+    print(f'new bites& drink frames: {(np.sum(results,axis=0)*8/1000).astype(int)}')    
+
     '''
     Split training, validataion, testing set, with ratio being 0.7:0.15:0.15
     '''
@@ -348,11 +373,12 @@ if __name__ == '__main__':
         os.mkdir(os.path.join(FRAME_LOC,'test_set'))
     except:
         pass
-    if 'trainlist.txt' in os.listdir(FRAME_LOC):
+
+    if 'trainlist.txt' in os.listdir(SPLIT_LIST_LOC):
         # if there is pre-generated video list for splitting dataset
-        f_trainlist = open(os.path.join(FRAME_LOC,'trainlist.txt'),'r')
-        f_vallist = open(os.path.join(FRAME_LOC,'vallist.txt'),'r')
-        f_testlist = open(os.path.join(FRAME_LOC,'testlist.txt'),'r')   
+        f_trainlist = open(os.path.join(SPLIT_LIST_LOC,'trainlist.txt'),'r')
+        f_vallist = open(os.path.join(SPLIT_LIST_LOC,'vallist.txt'),'r')
+        f_testlist = open(os.path.join(SPLIT_LIST_LOC,'testlist.txt'),'r')   
         if subject_independent:
             for subject_idx in f_trainlist.readlines():
                 move_subject_videos(subject_idx.split("\n")[0], 
@@ -371,12 +397,12 @@ if __name__ == '__main__':
                 move_video(os.path.join(FRAME_LOC,video_idx), 
                             os.path.join(FRAME_LOC,'val_set'))
             for video_idx in f_testlist.readlines():
-                move_video((os.path.join(FRAME_LOC,video_idx), 
-                            os.path.join(FRAME_LOC,'test_set')))  
+                move_video(os.path.join(FRAME_LOC,video_idx), 
+                            os.path.join(FRAME_LOC,'test_set'))  
         f_trainlist.close()
         f_vallist.close()
         f_testlist.close()            
-        
+   
     else:
         video_list = [f for f in os.listdir(FRAME_LOC) if f.startswith('p')]
         video_list.sort(reverse=False)
@@ -386,9 +412,9 @@ if __name__ == '__main__':
         subject_num = len(subject_set)
     
         # randomly generate video list for splitting dataset
-        f_trainlist = open(os.path.join(FRAME_LOC,'trainlist.txt'),'w')
-        f_vallist = open(os.path.join(FRAME_LOC,'vallist.txt'),'w')
-        f_testlist = open(os.path.join(FRAME_LOC,'testlist.txt'),'w')   
+        f_trainlist = open(os.path.join(SPLIT_LIST_LOC,'trainlist.txt'),'w')
+        f_vallist = open(os.path.join(SPLIT_LIST_LOC,'vallist.txt'),'w')
+        f_testlist = open(os.path.join(SPLIT_LIST_LOC,'testlist.txt'),'w')   
 
         if subject_independent:
             random_idxs = np.random.permutation(subject_num)
@@ -405,7 +431,7 @@ if __name__ == '__main__':
                                     os.path.join(FRAME_LOC,'test_set'))        
                 f_testlist.write(subject_set[idx]+'\n')        
         else:  
-            random_idxs = np.random.permutation(video_list)        
+            random_idxs = np.random.permutation(len(video_list))        
             for idx in random_idxs[0:int(0.7*video_num)]:
                 move_video(os.path.join(FRAME_LOC,video_list[idx]), 
                             os.path.join(FRAME_LOC,'train_set'))
@@ -415,8 +441,8 @@ if __name__ == '__main__':
                             os.path.join(FRAME_LOC,'val_set'))
                 f_vallist.write(video_list[idx]+'\n')  
             for idx in random_idxs[int(0.85*video_num):]:
-                move_video((os.path.join(FRAME_LOC,video_list[idx]), 
-                            os.path.join(FRAME_LOC,'test_set')))  
+                move_video(os.path.join(FRAME_LOC,video_list[idx]), 
+                            os.path.join(FRAME_LOC,'test_set'))  
                 f_testlist.write(video_list[idx]+'\n') 
         f_trainlist.close()
         f_vallist.close()

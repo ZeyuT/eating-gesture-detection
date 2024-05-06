@@ -26,8 +26,8 @@ def get_model(network):
     """
     if network == "slowfast-r50":
         model = slowfast.generate_model(
-                    config_path="/home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/models/config/SLOWFAST_8x8_R50_stepwise.yaml",
-                    weights_path="/home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/pre_trained/SLOWFAST_8x8_R50_stepwise.pkl",
+                    config_path="/home/zeyut/meta/workspace/eating-gesture-detection/reimplementation/models/config/SLOWFAST_8x8_R50_stepwise.yaml",
+                    weights_path="/home/zeyut/meta/workspace/eating-gesture-detection/reimplementation/pre_trained/SLOWFAST_8x8_R50_stepwise.pkl",
                     network=network) 
         model_type = "seq2one"
         inference_type = "seq2one"
@@ -38,23 +38,23 @@ def get_model(network):
     if network in ["x3d-s","x3d-m","x3d-l"]:
         if network == "x3d-s":
             #x3d-s is used for frame-wise prediction
-            config_path = "/home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/models/config/X3D_S.yaml"
-            weight_path = "/home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/pre_trained/x3d_s.pyth"
+            config_path = "/home/zeyut/meta/workspace/eating-gesture-detection/reimplementation/models/config/X3D_S.yaml"
+            weight_path = "/home/zeyut/meta/workspace/eating-gesture-detection/reimplementation/pre_trained/x3d_s.pyth"
             fps = 5 #in hz
             seq_len = 13
             model_type = "seq2seq"
             inference_type = "seq2seq"
         elif network == "x3d-m":
             # TODO: Generate frame dataset for the fps, H and W
-            config_path = "/home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/models/config/X3D_M.yaml"
-            weight_path = "/home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/pre_trained/x3d_m.pyth"
+            config_path = "/home/zeyut/meta/workspace/eating-gesture-detection/reimplementation/models/config/X3D_M.yaml"
+            weight_path = "/home/zeyut/meta/workspace/eating-gesture-detection/reimplementation/pre_trained/x3d_m.pyth"
             fps = 6 #in hz
             seq_len = 16
             model_type = "seq2one"
             inference_type = "seq2one"
         elif network == "x3d-l":
-            config_path = "/home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/models/config/X3D_L.yaml"
-            weight_path = "/home/zeyut/eat_detection/workspace/eating-gesture-detection/reimplementation/pre_trained/x3d_l.pyth"   
+            config_path = "/home/zeyut/meta/workspace/eating-gesture-detection/reimplementation/models/config/X3D_L.yaml"
+            weight_path = "/home/zeyut/meta/workspace/eating-gesture-detection/reimplementation/pre_trained/x3d_l.pyth"   
             fps = 6 #in hz
             seq_len = 16
             model_type = "seq2one"

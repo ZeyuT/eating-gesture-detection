@@ -6,4 +6,6 @@
 #PBS -o /home/zeyut/eat_detection/workspace/job_output
 #PBS -j oe
 
-echo "1111"
+dir=/scratch/zeyut/eat_detection
+
+echo ${dir}

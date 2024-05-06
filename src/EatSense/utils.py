@@ -7,7 +7,7 @@ import torchvision
 import torchvision.transforms as transforms
 from PIL import Image
 from torch.autograd import Variable
-from constants import CHANNEL,LABEL_NUM, LABEL_TABLE
+from constants import CHANNEL,LABEL_NUM,LABEL_TABLE
 from tqdm import tqdm
 import math
 import gc
@@ -71,11 +71,11 @@ class FrameSequenceDataset(data.Dataset):
             frames = self.transform(frames)
         gc.collect()
         return frames, labels
-
+            
     def _get_frames(self, frame_list):
         frames = []
         for frame_loc in frame_list:
-            frames.append(Image.open(frame_loc).convert('RGB'))
+            frames.append(Image.open(frame_loc.replace('\n','').replace(' ','')).convert('RGB'))
         gc.collect()
         return frames
 
