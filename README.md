@@ -1,5 +1,6 @@
 # eating-gesture-detection
-My personal PhD research. video-based eating gesture detection
+My personal PhD research. \
+video-based eating gesture detection\
 publication:
 https://dl.acm.org/doi/full/10.1145/3709151
 
