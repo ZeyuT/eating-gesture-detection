@@ -13,6 +13,4 @@ scikit-image==0.17.1 \
 scikit-learn==0.22.2.post1 \
 sklearn==0.0 
 
-<i> Note: some dependencies may not be used for now, but are reserved for possible future purpose </i>
-
 Dependencies installing pipeline: [env-2.2.sh](https://github.com/ZeyuT/eating-gesture-detection/blob/main/env-2.2.sh)
