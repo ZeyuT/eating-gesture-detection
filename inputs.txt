@@ -1,2 +1,0 @@
-8 20 CNNLSTM_Model 40 8 1 
-8 20 CNN3D_Model 40 8 1

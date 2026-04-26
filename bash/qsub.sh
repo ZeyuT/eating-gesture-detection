@@ -1,0 +1,1 @@
+qsub -I -l select=1:ncpus=20:mem=150gb:ngpus=1:gpu_model=a100:interconnect=any,walltime=24:00:00

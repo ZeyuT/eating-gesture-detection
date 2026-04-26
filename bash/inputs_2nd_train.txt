@@ -1,0 +1,2 @@
+1 all RES_LSTM single_lstm
+1 all RES_LSTM double_lstm
